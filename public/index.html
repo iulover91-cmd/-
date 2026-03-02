@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>프리랜서 관리 시스템</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- 토스트 알림 -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- 모바일 메뉴 버튼 -->
+<button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+
+<!-- ============ 로그인 화면 ============ -->
+<div id="loginScreen" class="login-container">
+  <div class="login-box">
+    <h1>프리랜서 관리 시스템</h1>
+    <p class="subtitle">Freelancer Management System</p>
+    <div class="form-group">
+      <label>아이디</label>
+      <input type="text" id="loginUsername" placeholder="아이디를 입력하세요" onkeypress="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="form-group">
+      <label>비밀번호</label>
+      <input type="password" id="loginPassword" placeholder="비밀번호를 입력하세요" onkeypress="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()">로그인</button>
+    <p class="error-msg" id="loginError"></p>
+  </div>
+</div>
+
+<!-- ============ 메인 앱 ============ -->
+<div id="appScreen" class="app-container hidden">
+
+  <!-- 사이드바 -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h2>FMS</h2>
+      <div class="user-info">
+        <span id="sidebarUserName"></span>
+        <br>
+        <span class="role-badge" id="sidebarRole"></span>
+      </div>
+    </div>
+    <div class="sidebar-nav" id="sidebarNav">
+      <!-- 동적 생성 -->
+    </div>
+    <div class="sidebar-footer">
+      <div class="nav-item" onclick="doLogout()">
+        <span class="icon">🚪</span> 로그아웃
+      </div>
+    </div>
+  </nav>
+
+  <!-- 메인 콘텐츠 -->
+  <div class="main-content" id="mainContent">
+    <!-- 페이지가 여기에 동적 렌더링 -->
+  </div>
+</div>
+
+<!-- ============ 모달: 프리랜서 추가/수정 ============ -->
+<div class="modal-overlay" id="freelancerModal">
+  <div class="modal">
+    <h2 id="freelancerModalTitle">프리랜서 추가</h2>
+    <input type="hidden" id="editFreelancerId">
+    <div class="form-group">
+      <label>이름 *</label>
+      <input type="text" id="flName" placeholder="홍길동">
+    </div>
+    <div class="form-group">
+      <label>로그인 아이디</label>
+      <input type="text" id="flUsername" placeholder="자동생성 (이름 기반)">
+    </div>
+    <div class="form-group">
+      <label>초기 비밀번호</label>
+      <input type="text" id="flPassword" placeholder="1234 (기본값)">
+    </div>
+    <div class="form-group">
+      <label>이메일</label>
+      <input type="email" id="flEmail" placeholder="email@example.com">
+    </div>
+    <div class="form-group">
+      <label>전화번호</label>
+      <input type="tel" id="flPhone" placeholder="010-1234-5678">
+    </div>
+    <div class="form-group">
+      <label>건당 단가 (원) *</label>
+      <input type="number" id="flUnitPrice" placeholder="50000">
+    </div>
+    <div class="form-group">
+      <label>구글 드라이브 폴더 URL</label>
+      <input type="url" id="flDriveUrl" placeholder="https://drive.google.com/drive/folders/xxxxx">
+      <small style="color:#888;font-size:12px;">구글 드라이브에서 폴더를 우클릭 → 링크 복사 후 붙여넣기</small>
+    </div>
+    <div class="form-group">
+      <label>파일 확장자 필터 (카운트할 파일 종류)</label>
+      <input type="text" id="flExtensions" placeholder=".mp4, .mov, .avi">
+      <small style="color:#888;font-size:12px;">비워두면 모든 파일을 카운트합니다. 특정 확장자만 카운트하려면 콤마로 구분하여 입력 (예: .mp4, .mov)</small>
+    </div>
+    <div class="form-group">
+      <label>메모</label>
+      <textarea id="flMemo" rows="3" placeholder="메모를 입력하세요"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('freelancerModal')">취소</button>
+      <button class="btn btn-primary" onclick="saveFreelancer()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 모달: 파일 수동 등록 ============ -->
+<div class="modal-overlay" id="fileModal">
+  <div class="modal">
+    <h2>작업 파일 수동 등록</h2>
+    <div class="form-group">
+      <label>프리랜서 선택 *</label>
+      <select id="fileFreelancerId"></select>
+    </div>
+    <div class="form-group">
+      <label>파일명 *</label>
+      <input type="text" id="fileName" placeholder="작업파일명.psd">
+    </div>
+    <div class="form-group">
+      <label>작성자</label>
+      <input type="text" id="fileUploader" placeholder="작성자 이름">
+    </div>
+    <div class="form-group">
+      <label>업로드 일시</label>
+      <input type="datetime-local" id="fileDate">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('fileModal')">취소</button>
+      <button class="btn btn-primary" onclick="saveFile()">등록</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 모달: 일정 추가 ============ -->
+<div class="modal-overlay" id="eventModal">
+  <div class="modal">
+    <h2>일정 추가</h2>
+    <div class="form-group">
+      <label>일정 제목 *</label>
+      <input type="text" id="eventTitle" placeholder="일정 제목">
+    </div>
+    <div class="form-group">
+      <label>설명</label>
+      <textarea id="eventDesc" rows="3" placeholder="상세 내용"></textarea>
+    </div>
+    <div class="form-group">
+      <label>날짜 *</label>
+      <input type="date" id="eventDate">
+    </div>
+    <div class="form-group">
+      <label>종류</label>
+      <select id="eventCategory">
+        <option value="custom">일반 일정</option>
+        <option value="tax">세무 일정</option>
+        <option value="policy">정책/지원금</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('eventModal')">취소</button>
+      <button class="btn btn-primary" onclick="saveEvent()">등록</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 모달: 비밀번호 변경 ============ -->
+<div class="modal-overlay" id="passwordModal">
+  <div class="modal">
+    <h2>비밀번호 변경</h2>
+    <div class="form-group">
+      <label>현재 비밀번호</label>
+      <input type="password" id="currentPw">
+    </div>
+    <div class="form-group">
+      <label>새 비밀번호</label>
+      <input type="password" id="newPw">
+    </div>
+    <div class="form-group">
+      <label>새 비밀번호 확인</label>
+      <input type="password" id="confirmPw">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('passwordModal')">취소</button>
+      <button class="btn btn-primary" onclick="changePassword()">변경</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
