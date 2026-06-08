@@ -690,108 +690,284 @@ tbody tr:hover { background: #f8f9fa; }
   white-space: nowrap;
 }
 
-/* ============ 길드 카드 거래 ============ */
-.guild-tab {
-  padding: 12px 20px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 14px;
-  color: #888;
-  font-weight: 600;
-  border-bottom: 3px solid transparent;
-  transition: all 0.2s;
-}
-.guild-tab.active {
-  color: #302b63;
-  border-bottom-color: #302b63;
-}
-.guild-tab:hover { color: #302b63; }
+/* ============ 길드 카드 거래 (스티커북) ============ */
 
-.guild-card-grid {
+/* 스티커북 개요 그리드 */
+.sb-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px;
-}
-.guild-card-item {
-  background: #f8f9fa;
-  border: 2px solid #e9ecef;
-  border-radius: 10px;
-  padding: 12px;
-  position: relative;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.guild-card-item:hover { border-color: #302b63; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-.guild-card-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1a1a2e;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
   margin-bottom: 8px;
+}
+.sb-tile {
+  background: linear-gradient(160deg, #2c1a0e 0%, #4a2c14 100%);
+  border-radius: 14px;
+  padding: 12px 10px 10px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s, box-shadow 0.15s;
+  border: 2px solid #6b3a1a;
+  text-align: center;
+}
+.sb-tile:hover { transform: translateY(-4px); box-shadow: 0 10px 28px rgba(0,0,0,0.35); }
+.sb-tile.sb-full { border-color: #c9a227; box-shadow: 0 0 12px rgba(201,162,39,0.3); }
+.sb-cover {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  object-fit: cover;
+  display: block;
+  margin-bottom: 8px;
+}
+.sb-cover-placeholder {
+  background: rgba(0,0,0,0.3);
+  display: flex; align-items: center; justify-content: center;
+}
+.sb-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f5deb3;
+  margin-bottom: 4px;
   line-height: 1.3;
 }
-.guild-card-checks {
-  display: flex;
-  gap: 8px;
+.sb-progress-text {
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  margin-bottom: 4px;
 }
-.guild-check-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 3px 8px;
-  border-radius: 6px;
-  transition: background 0.15s;
+.sb-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+  overflow: hidden;
 }
-.guild-check-label.owned { color: #27ae60; }
-.guild-check-label.owned:has(input:checked) { background: #e8f8f0; }
-.guild-check-label.needed { color: #e74c3c; }
-.guild-check-label.needed:has(input:checked) { background: #fde8e8; }
-.guild-check-label input { cursor: pointer; accent-color: currentColor; }
-
-.guild-card-del {
+.sb-bar-fill {
+  height: 100%;
+  background: #f5c518;
+  border-radius: 2px;
+  transition: width 0.4s;
+}
+.sb-tradeable-badge {
   position: absolute;
   top: 6px; right: 6px;
-  background: #fde8e8;
-  color: #e74c3c;
+  background: #3498db;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.3);
+}
+.sb-admin-btns {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sb-admin-btns button {
+  background: rgba(255,255,255,0.1);
   border: none;
-  border-radius: 50%;
-  width: 20px; height: 20px;
-  font-size: 14px;
+  border-radius: 4px;
   cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0;
-  transition: opacity 0.15s;
+  font-size: 12px;
+  padding: 2px 6px;
+  color: #fff;
+}
+.sb-admin-btns button:hover { background: rgba(255,255,255,0.25); }
+
+/* 카드 3×3 그리드 */
+.sc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.sc-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 카드 본체 */
+.sc {
+  flex: 1;
+  border-radius: 12px;
+  border: 3px solid #8b6340;
+  background: #f0e0c0;
+  position: relative;
+  cursor: default;
+  transition: box-shadow 0.15s;
+  min-width: 0;
+}
+.sc.rarity-4 {
+  border-color: #c9a227;
+  box-shadow: 0 0 10px rgba(201,162,39,0.4);
+}
+.sc:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+
+.sc-stars {
+  text-align: center;
+  font-size: 10px;
+  padding: 3px 4px 0;
+  color: #c9a227;
+  letter-spacing: 1px;
   line-height: 1;
 }
-.guild-card-item:hover .guild-card-del { opacity: 1; }
+/* for empty cards, stars are dark */
+.sc[data-qty="0"] .sc-stars { color: #555; }
 
-.guild-card-chip {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
-  background: #f0f0f0;
-  color: #333;
+.sc-inner {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 6px 6px 0 0;
+  margin: 4px 4px 0;
+  background: #d4b896;
+}
+.sc-inner img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
-.guild-legend {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+/* 회색 오버레이 (0개) */
+.sc-gray-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(150,130,110,0.65);
+  pointer-events: none;
+}
+
+/* 교환 가능 뱃지 (qty-1) */
+.sc-tradeable {
+  position: absolute;
+  top: -2px; right: -2px;
+  background: #3498db;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 900;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 4px;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 3;
+  line-height: 1;
+}
+
+/* 보유만 있을 때 작은 점 */
+.sc-owned-dot {
+  position: absolute;
+  bottom: 4px; right: 4px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #27ae60;
+  border: 2px solid #fff;
+  z-index: 3;
+}
+
+/* 카드 이름 */
+.sc-name {
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  color: #3d1a00;
+  padding: 4px 4px 5px;
+  line-height: 1.2;
+  min-height: 28px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* 빈 슬롯 플레이스홀더 */
+.sc-placeholder {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: linear-gradient(160deg, #e8d5b4 0%, #d4b896 100%);
+}
+.sc-stars-inner {
+  font-size: 10px;
+  color: #555;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+/* 관리자 편집 버튼 */
+.sc-edit-btn {
+  position: absolute;
+  top: 2px; left: 2px;
+  background: rgba(0,0,0,0.5);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 4px;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 5;
+}
+.sc:hover .sc-edit-btn { opacity: 1; }
+
+/* +/- 버튼 */
+.sc-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.1s, opacity 0.1s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  line-height: 1;
+  padding: 0;
+}
+.sc-btn:hover { transform: scale(1.18); }
+.sc-btn:active { transform: scale(0.88); }
+.sc-btn:disabled { opacity: 0.4; transform: none; }
+.sc-btn-minus { background: #e74c3c; color: #fff; }
+.sc-btn-plus { background: #3498db; color: #fff; }
+
+/* 비교 화면 */
+.compare-give { border-top: 4px solid #27ae60; }
+.compare-receive { border-top: 4px solid #3498db; }
+.compare-count {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 3px 12px;
+  border-radius: 12px;
+}
+.compare-count.give { background: #e8f8f0; color: #27ae60; }
+.compare-count.receive { background: #e8f4fd; color: #3498db; }
+.sc-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 16px;
   font-size: 12px;
   font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 6px;
 }
-.guild-legend.owned { background: #e8f8f0; color: #27ae60; }
-.guild-legend.needed { background: #fde8e8; color: #e74c3c; }
+.rarity-chip-1 { background: #f0f0f0; color: #555; }
+.rarity-chip-2 { background: #e8f8f0; color: #27ae60; }
+.rarity-chip-3 { background: #e8f4fd; color: #3498db; }
+.rarity-chip-4 { background: #fff3cd; color: #c9a227; border: 1px solid #c9a227; }
 
+/* 반응형 */
 @media (max-width: 768px) {
-  .guild-card-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
-  #guildTabContent > div[style*="grid-template-columns:1fr 1fr"] {
-    grid-template-columns: 1fr;
-  }
+  .sb-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .sb-tile { padding: 8px 6px 8px; }
+  .sc-grid { gap: 8px; }
+  .sc-btn { width: 24px; height: 24px; font-size: 16px; }
+  .sc-tradeable { font-size: 12px; min-width: 22px; height: 22px; }
+  div:has(> .compare-give) { grid-template-columns: 1fr !important; }
+  .compare-give, .compare-receive { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) {
+  .sb-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
 }

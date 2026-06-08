@@ -2425,308 +2425,450 @@ async function checkNotifications() {
   } catch {}
 }
 
-// ============ 길드 카드 거래 ============
-let guildAllCards = [];
-let guildMyOwned = new Set();
-let guildMyNeeded = new Set();
-let guildActiveTab = 'my-cards';
+// ============ 길드 카드 거래 (스티커북) ============
+let guildView = 'overview'; // 'overview' | 'book' | 'compare'
+let guildCurrentBookId = null;
+let guildCurrentBookName = '';
+let guildCompareTargetId = null;
+let guildCompareTargetName = '';
 
 async function renderGuildCards(container) {
-  container.innerHTML = '<p style="padding:32px;">로딩 중...</p>';
+  container.innerHTML = '<div style="padding:32px;text-align:center;color:#888;">로딩 중...</div>';
   try {
-    const [cards, myInv] = await Promise.all([
-      api('/api/guild/cards'),
-      api('/api/guild/my-cards')
-    ]);
-    guildAllCards = cards;
-    guildMyOwned = new Set(myInv.filter(i => i.status === 'owned').map(i => i.card_id));
-    guildMyNeeded = new Set(myInv.filter(i => i.status === 'needed').map(i => i.card_id));
-
-    container.innerHTML = `
-      <div class="page-header">
-        <h1>🃏 길드 카드 거래</h1>
-        ${currentUser.role === 'admin' ? `<div class="actions"><button class="btn btn-primary btn-sm" onclick="openGuildCardAddModal()">+ 카드 추가</button></div>` : ''}
-      </div>
-
-      <div style="display:flex;gap:0;border-bottom:2px solid #e0e0e0;margin-bottom:20px;">
-        <button class="guild-tab ${guildActiveTab==='my-cards'?'active':''}" onclick="switchGuildTab('my-cards')">📋 내 카드 관리</button>
-        <button class="guild-tab ${guildActiveTab==='members'?'active':''}" onclick="switchGuildTab('members')">👥 길드원 현황</button>
-        <button class="guild-tab ${guildActiveTab==='compare'?'active':''}" onclick="switchGuildTab('compare')">🔄 카드 비교</button>
-      </div>
-
-      <div id="guildTabContent"></div>
-    `;
-
-    switchGuildTab(guildActiveTab);
+    if (guildView === 'book' && guildCurrentBookId) {
+      await renderGuildBook(container, guildCurrentBookId, guildCurrentBookName);
+    } else if (guildView === 'compare') {
+      await renderGuildCompare(container, guildCompareTargetId, guildCompareTargetName);
+    } else {
+      await renderGuildOverview(container);
+    }
   } catch(e) {
     container.innerHTML = `<p class="error-msg" style="padding:32px;">${e.message}</p>`;
   }
 }
 
-function switchGuildTab(tab) {
-  guildActiveTab = tab;
-  document.querySelectorAll('.guild-tab').forEach(el => {
-    el.classList.toggle('active', el.textContent.includes(tab === 'my-cards' ? '내 카드' : tab === 'members' ? '길드원' : '비교'));
-  });
-  const content = document.getElementById('guildTabContent');
-  if (!content) return;
-  if (tab === 'my-cards') renderGuildMyCards(content);
-  else if (tab === 'members') renderGuildMembers(content);
-  else if (tab === 'compare') renderGuildCompare(content);
-}
+async function renderGuildOverview(container) {
+  guildView = 'overview';
+  const books = await api('/api/guild/books');
+  const members = await api('/api/guild/members').catch(() => []);
 
-function groupCardsByCategory(cards) {
-  const groups = {};
-  for (const c of cards) {
-    const cat = c.category || '기타';
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(c);
+  const totalOwned = books.reduce((s,b) => s + (b.owned_cards||0), 0);
+  const totalCards = books.reduce((s,b) => s + (b.total_cards||0), 0);
+  const totalTradeable = books.reduce((s,b) => s + (b.tradeable_total||0), 0);
+
+  let bookGrid = books.map(b => {
+    const pct = b.total_cards > 0 ? Math.round((b.owned_cards / b.total_cards) * 100) : 0;
+    const full = b.owned_cards >= b.total_cards && b.total_cards > 0;
+    return `
+      <div class="sb-tile ${full ? 'sb-full' : ''}" onclick="guildOpenBook(${b.id},'${b.name.replace(/'/g,"\\'")}')">
+        ${b.cover_image_path ? `<img class="sb-cover" src="${b.cover_image_path}" alt="${b.name}">` : `<div class="sb-cover sb-cover-placeholder"><span style="font-size:28px;">📖</span></div>`}
+        ${b.tradeable_total > 0 ? `<div class="sb-tradeable-badge">+${b.tradeable_total}</div>` : ''}
+        <div class="sb-name">${b.name}</div>
+        <div class="sb-progress-text">${b.owned_cards} / ${b.total_cards}</div>
+        <div class="sb-bar"><div class="sb-bar-fill" style="width:${pct}%"></div></div>
+        ${currentUser.role==='admin' ? `<div class="sb-admin-btns" onclick="event.stopPropagation()">
+          <button onclick="guildEditBook(${b.id},'${b.name.replace(/'/g,"\\'")}',${b.sort_order||0})" title="편집">✏️</button>
+          <button onclick="guildDeleteBook(${b.id},'${b.name.replace(/'/g,"\\'")}')">🗑️</button>
+        </div>` : ''}
+      </div>`;
+  }).join('');
+
+  let memberHtml = '';
+  if (members.length > 0) {
+    memberHtml = `
+      <div class="card" style="margin-top:24px;">
+        <div class="card-header"><h3>👥 길드원 카드 현황</h3></div>
+        <div class="table-container"><table>
+          <thead><tr><th>닉네임</th><th>보유 스티커</th><th>교환 가능</th><th>비교</th></tr></thead>
+          <tbody>${members.map(m => `<tr>
+            <td><strong>${m.display_name}</strong></td>
+            <td><span style="font-weight:700;color:#27ae60;">${m.owned_count}장</span></td>
+            <td><span style="font-weight:700;color:#3498db;">${m.tradeable_count > 0 ? '+'+m.tradeable_count : '-'}장</span></td>
+            <td><button class="btn btn-primary btn-sm" onclick="guildStartCompare(${m.id},'${m.display_name.replace(/'/g,"\\'")}')">🔄 비교</button></td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>`;
   }
-  return groups;
-}
 
-function renderGuildMyCards(container) {
-  if (guildAllCards.length === 0) {
-    container.innerHTML = `<div class="card"><p style="color:#888;text-align:center;padding:32px;">등록된 카드가 없습니다.<br>${currentUser.role==='admin'?'상단 "+ 카드 추가" 버튼으로 카드를 추가하세요.':''}</p></div>`;
-    return;
-  }
-
-  const groups = groupCardsByCategory(guildAllCards);
-  const ownedCount = guildMyOwned.size;
-  const neededCount = guildMyNeeded.size;
-
-  let html = `
-    <div class="card" style="margin-bottom:16px;padding:16px 24px;">
-      <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
-        <span style="font-size:14px;color:#555;">내 보유: <strong style="color:#27ae60;">${ownedCount}장</strong></span>
-        <span style="font-size:14px;color:#555;">필요 카드: <strong style="color:#e74c3c;">${neededCount}장</strong></span>
-        <span style="font-size:14px;color:#555;">전체: <strong>${guildAllCards.length}장</strong></span>
-        <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="saveMyGuildCards()">💾 저장</button>
+  container.innerHTML = `
+    <div class="page-header">
+      <h1>🃏 길드 카드 거래</h1>
+      ${currentUser.role === 'admin' ? `<div class="actions">
+        <button class="btn btn-primary btn-sm" onclick="guildAddBook()">+ 스티커북 추가</button>
+      </div>` : ''}
+    </div>
+    <div class="card" style="padding:16px 24px;margin-bottom:20px;">
+      <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:14px;color:#555;">내 보유: <strong style="color:#27ae60;font-size:18px;">${totalOwned}</strong><span style="color:#aaa;font-size:13px;"> / ${totalCards}</span></span>
+        <span style="font-size:14px;color:#555;">교환 가능: <strong style="color:#3498db;font-size:18px;">${totalTradeable > 0 ? '+'+totalTradeable : 0}</strong></span>
+        <span style="font-size:14px;color:#555;">스티커북: <strong>${books.length}종</strong></span>
       </div>
     </div>
-
-    <div class="card">
-      <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-        <span style="font-size:13px;color:#888;">체크하여 보유/필요 카드를 설정하세요</span>
-        <span class="guild-legend owned">✓ 보유</span>
-        <span class="guild-legend needed">✓ 필요</span>
-      </div>
+    <div class="sb-grid">${bookGrid}</div>
+    ${memberHtml}
   `;
+}
 
-  for (const [cat, cards] of Object.entries(groups)) {
-    html += `<div style="margin-bottom:20px;"><h4 style="font-size:14px;color:#555;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f0f0f0;">${cat}</h4>`;
-    html += `<div class="guild-card-grid">`;
-    for (const card of cards) {
-      const isOwned = guildMyOwned.has(card.id);
-      const isNeeded = guildMyNeeded.has(card.id);
-      html += `
-        <div class="guild-card-item" id="gci-${card.id}">
-          <div class="guild-card-name">${card.name}</div>
-          <div class="guild-card-checks">
-            <label class="guild-check-label owned" onclick="event.stopPropagation()">
-              <input type="checkbox" ${isOwned?'checked':''} onchange="toggleGuildCard(${card.id},'owned',this.checked)">
-              보유
-            </label>
-            <label class="guild-check-label needed" onclick="event.stopPropagation()">
-              <input type="checkbox" ${isNeeded?'checked':''} onchange="toggleGuildCard(${card.id},'needed',this.checked)">
-              필요
-            </label>
+function guildOpenBook(bookId, bookName) {
+  guildView = 'book';
+  guildCurrentBookId = bookId;
+  guildCurrentBookName = bookName;
+  renderGuildCards(document.getElementById('mainContent'));
+}
+
+function guildStartCompare(userId, userName) {
+  guildView = 'compare';
+  guildCompareTargetId = userId;
+  guildCompareTargetName = userName;
+  renderGuildCards(document.getElementById('mainContent'));
+}
+
+function guildBack() {
+  guildView = 'overview';
+  guildCurrentBookId = null;
+  renderGuildCards(document.getElementById('mainContent'));
+}
+
+// ─── 스티커북 상세: 3×3 카드 그리드 ───
+async function renderGuildBook(container, bookId, bookName) {
+  container.innerHTML = '<div style="padding:32px;text-align:center;color:#888;">로딩 중...</div>';
+  const cards = await api(`/api/guild/books/${bookId}/cards`);
+
+  // 9개 슬롯 보장
+  const slots = Array.from({length: 9}, (_, i) => cards.find(c => c.position === i+1) || null);
+
+  const renderStars = (r) => '★'.repeat(r) + '☆'.repeat(Math.max(0, 4-r));
+
+  const cardHtml = slots.map((c, i) => {
+    if (!c) {
+      return `<div class="sc-wrap"><div class="sc rarity-1 sc-empty"><div class="sc-inner"><div class="sc-placeholder"><span style="font-size:22px;opacity:0.3;">☆</span><span style="font-size:11px;color:#bbb;margin-top:4px;">빈 슬롯</span></div></div><div class="sc-name">-</div></div></div>`;
+    }
+    const qty = c.my_quantity || 0;
+    const tradeable = Math.max(0, qty - 1);
+    const stars = renderStars(c.rarity || 1);
+    const imgHtml = c.image_path
+      ? `<img src="${c.image_path}" alt="${c.name}" loading="lazy">`
+      : `<div class="sc-placeholder"><span class="sc-stars-inner">${stars}</span><span style="font-size:10px;color:#999;margin-top:2px;text-align:center;padding:0 4px;">${c.name}</span></div>`;
+
+    return `
+      <div class="sc-wrap">
+        <button class="sc-btn sc-btn-minus" onclick="guildAdjustQty(${c.id}, -1, this)" title="−1">−</button>
+        <div class="sc rarity-${c.rarity||1}" data-qty="${qty}" data-id="${c.id}">
+          <div class="sc-stars">${stars}</div>
+          <div class="sc-inner">${imgHtml}
+            ${qty === 0 ? '<div class="sc-gray-overlay"></div>' : ''}
+            ${tradeable > 0 ? `<div class="sc-tradeable">+${tradeable}</div>` : ''}
+            ${qty > 0 && tradeable === 0 ? '<div class="sc-owned-dot"></div>' : ''}
           </div>
-          ${currentUser.role==='admin' ? `<button class="guild-card-del" onclick="deleteGuildCard(${card.id},'${card.name.replace(/'/g,"\\'")}')">×</button>` : ''}
+          <div class="sc-name">${c.name}</div>
+          ${currentUser.role==='admin' ? `<button class="sc-edit-btn" onclick="guildEditCard(${c.id},'${c.name.replace(/'/g,"\\'")}',${c.rarity||1},'${(c.image_path||'').replace(/'/g,"\\'")}',${bookId})" title="편집">✏️</button>` : ''}
         </div>
-      `;
-    }
-    html += `</div></div>`;
-  }
-  html += `
-      <div style="text-align:right;margin-top:16px;">
-        <button class="btn btn-primary btn-sm" onclick="saveMyGuildCards()">💾 저장</button>
+        <button class="sc-btn sc-btn-plus" onclick="guildAdjustQty(${c.id}, 1, this)" title="+1">+</button>
+      </div>`;
+  }).join('');
+
+  const totalOwned = slots.filter(c => c && (c.my_quantity||0) > 0).length;
+  const totalTradeable = slots.reduce((s, c) => s + (c ? Math.max(0, (c.my_quantity||0)-1) : 0), 0);
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-secondary btn-sm" onclick="guildBack()">← 목록</button>
+        <h1 style="margin:0;">${bookName}</h1>
+      </div>
+      ${currentUser.role==='admin' ? `<div class="actions">
+        <button class="btn btn-primary btn-sm" onclick="guildBulkAddCards(${bookId})">일괄 등록</button>
+        <button class="btn btn-success btn-sm" onclick="guildAddCard(${bookId})">+ 카드 추가</button>
+      </div>` : ''}
+    </div>
+    <div class="card" style="padding:14px 20px;margin-bottom:16px;">
+      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:14px;">보유: <strong style="color:#27ae60;font-size:18px;">${totalOwned}</strong><span style="color:#aaa;font-size:13px;"> / 9</span></span>
+        <span style="font-size:14px;">교환 가능: <strong style="color:#3498db;font-size:18px;">${totalTradeable > 0 ? '+'+totalTradeable : 0}</strong></span>
+        <span style="font-size:12px;color:#aaa;margin-left:auto;">좌측 <span style="color:#e74c3c;font-weight:700;">−</span> / 우측 <span style="color:#3498db;font-weight:700;">+</span> 버튼으로 수량 조정 · 자동 저장</span>
       </div>
     </div>
+    <div class="sc-grid">${cardHtml}</div>
   `;
-  container.innerHTML = html;
 }
 
-function toggleGuildCard(cardId, status, checked) {
-  if (status === 'owned') {
-    if (checked) guildMyOwned.add(cardId); else guildMyOwned.delete(cardId);
-  } else {
-    if (checked) guildMyNeeded.add(cardId); else guildMyNeeded.delete(cardId);
-  }
-}
-
-async function saveMyGuildCards() {
+async function guildAdjustQty(cardId, delta, btn) {
+  btn.disabled = true;
   try {
-    await api('/api/guild/my-cards', {
-      method: 'PUT',
-      body: { owned: [...guildMyOwned], needed: [...guildMyNeeded] }
-    });
-    showToast('카드 정보가 저장되었습니다', 'success');
-  } catch(e) {
-    showToast(e.message, 'error');
-  }
-}
+    const res = await api(`/api/guild/cards/${cardId}/quantity`, { method: 'POST', body: { delta } });
+    const qty = res.quantity;
+    const card = document.querySelector(`.sc[data-id="${cardId}"]`);
+    if (!card) return;
+    card.dataset.qty = qty;
+    const tradeable = Math.max(0, qty - 1);
 
-async function renderGuildMembers(container) {
-  container.innerHTML = '<p style="color:#888;">로딩 중...</p>';
-  try {
-    const members = await api('/api/guild/members');
-    if (members.length === 0) {
-      container.innerHTML = '<div class="card"><p style="color:#888;text-align:center;padding:32px;">다른 길드원이 없습니다.</p></div>';
-      return;
+    // 교환 배지 갱신
+    let badge = card.querySelector('.sc-tradeable');
+    let dot = card.querySelector('.sc-owned-dot');
+    let overlay = card.querySelector('.sc-gray-overlay');
+
+    if (overlay) { if (qty > 0) overlay.remove(); }
+    else if (qty === 0) {
+      const inner = card.querySelector('.sc-inner');
+      const ov = document.createElement('div');
+      ov.className = 'sc-gray-overlay';
+      inner.appendChild(ov);
     }
 
-    let html = `<div class="card"><div class="table-container"><table>
-      <thead><tr><th>닉네임</th><th>보유 카드</th><th>필요 카드</th><th>비교</th></tr></thead>
-      <tbody>`;
-    for (const m of members) {
-      html += `<tr>
-        <td><strong>${m.display_name}</strong></td>
-        <td><span style="color:#27ae60;font-weight:700;">${m.owned_count}장</span></td>
-        <td><span style="color:#e74c3c;font-weight:700;">${m.needed_count}장</span></td>
-        <td><button class="btn btn-primary btn-sm" onclick="guildCompareWith(${m.id},'${m.display_name.replace(/'/g,"\\'")}')">🔄 비교하기</button></td>
-      </tr>`;
-    }
-    html += `</tbody></table></div></div>`;
-    container.innerHTML = html;
-  } catch(e) {
-    container.innerHTML = `<p class="error-msg">${e.message}</p>`;
-  }
-}
-
-async function renderGuildCompare(container, targetUserId, targetUserName) {
-  if (!targetUserId) {
-    // 멤버 선택 UI
-    try {
-      const members = await api('/api/guild/members');
-      if (members.length === 0) {
-        container.innerHTML = '<div class="card"><p style="color:#888;text-align:center;padding:32px;">비교할 길드원이 없습니다.</p></div>';
-        return;
+    if (tradeable > 0) {
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'sc-tradeable';
+        card.querySelector('.sc-inner').appendChild(badge);
       }
-      let html = `<div class="card">
-        <h3 style="margin-bottom:16px;">비교할 길드원을 선택하세요</h3>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;">`;
-      for (const m of members) {
-        html += `<button class="btn btn-secondary" onclick="guildCompareWith(${m.id},'${m.display_name.replace(/'/g,"\\'")}')">
-          ${m.display_name}
-          <span style="font-size:11px;opacity:0.8;margin-left:4px;">보유${m.owned_count} / 필요${m.needed_count}</span>
-        </button>`;
-      }
-      html += `</div></div>`;
-      container.innerHTML = html;
-    } catch(e) {
-      container.innerHTML = `<p class="error-msg">${e.message}</p>`;
-    }
-    return;
-  }
-
-  container.innerHTML = '<p style="color:#888;">비교 중...</p>';
-  try {
-    const result = await api(`/api/guild/compare/${targetUserId}`);
-    const { canGive, canReceive } = result;
-
-    const renderCardList = (cards) => {
-      if (cards.length === 0) return '<p style="color:#aaa;font-size:14px;padding:12px 0;">해당 카드가 없습니다</p>';
-      const groups = groupCardsByCategory(cards);
-      let html = '';
-      for (const [cat, cs] of Object.entries(groups)) {
-        html += `<div style="margin-bottom:12px;"><span style="font-size:12px;color:#888;font-weight:600;">${cat}</span><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">`;
-        for (const c of cs) {
-          html += `<span class="guild-card-chip">${c.name}</span>`;
+      badge.textContent = '+' + tradeable;
+      if (dot) dot.remove();
+    } else {
+      if (badge) badge.remove();
+      if (qty > 0) {
+        if (!dot) {
+          dot = document.createElement('div');
+          dot.className = 'sc-owned-dot';
+          card.querySelector('.sc-inner').appendChild(dot);
         }
-        html += `</div></div>`;
+      } else {
+        if (dot) dot.remove();
       }
-      return html;
-    };
+    }
 
-    container.innerHTML = `
-      <div style="display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">
-        <button class="btn btn-secondary btn-sm" onclick="renderGuildCompare(document.getElementById('guildTabContent'))">← 목록으로</button>
-        <h3 style="font-size:16px;"><strong>${targetUserName}</strong>님과의 카드 비교</h3>
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-        <div class="card" style="border-top:4px solid #27ae60;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-            <span style="font-size:20px;">📤</span>
-            <h3 style="color:#27ae60;">내가 줄 수 있는 카드</h3>
-            <span style="margin-left:auto;background:#e8f8f0;color:#27ae60;padding:4px 12px;border-radius:12px;font-weight:700;font-size:14px;">${canGive.length}장</span>
-          </div>
-          <p style="font-size:13px;color:#888;margin-bottom:12px;">내가 보유 & ${targetUserName}님이 필요</p>
-          ${renderCardList(canGive)}
-        </div>
-
-        <div class="card" style="border-top:4px solid #3498db;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-            <span style="font-size:20px;">📥</span>
-            <h3 style="color:#3498db;">내가 받을 수 있는 카드</h3>
-            <span style="margin-left:auto;background:#e8f4fd;color:#3498db;padding:4px 12px;border-radius:12px;font-weight:700;font-size:14px;">${canReceive.length}장</span>
-          </div>
-          <p style="font-size:13px;color:#888;margin-bottom:12px;">${targetUserName}님이 보유 & 내가 필요</p>
-          ${renderCardList(canReceive)}
-        </div>
-      </div>
-    `;
-  } catch(e) {
-    container.innerHTML = `<p class="error-msg">${e.message}</p>`;
-  }
+    // 상단 통계 갱신
+    const grid = card.closest('.sc-grid');
+    if (grid) {
+      const allCards = [...grid.querySelectorAll('.sc[data-id]')];
+      const newOwned = allCards.filter(el => parseInt(el.dataset.qty) > 0).length;
+      const newTrade = allCards.reduce((s, el) => s + Math.max(0, parseInt(el.dataset.qty||0) - 1), 0);
+      const statEl = grid.previousElementSibling?.querySelector('strong[style*="27ae60"]');
+      const tradeEl = grid.previousElementSibling?.querySelector('strong[style*="3498db"]');
+      if (statEl) statEl.textContent = newOwned;
+      if (tradeEl) tradeEl.textContent = newTrade > 0 ? '+'+newTrade : 0;
+    }
+  } catch(e) { showToast(e.message, 'error'); }
+  finally { btn.disabled = false; }
 }
 
-async function guildCompareWith(userId, userName) {
-  guildActiveTab = 'compare';
-  document.querySelectorAll('.guild-tab').forEach(el => {
-    el.classList.toggle('active', el.textContent.includes('비교'));
-  });
-  const content = document.getElementById('guildTabContent');
-  if (content) renderGuildCompare(content, userId, userName);
+// ─── 카드 비교 ───
+async function renderGuildCompare(container, targetUserId, targetUserName) {
+  container.innerHTML = '<div style="padding:32px;text-align:center;color:#888;">비교 중...</div>';
+  const result = await api(`/api/guild/compare/${targetUserId}`);
+  const { canGive, canReceive } = result;
+
+  const renderChips = (cards) => {
+    if (!cards.length) return '<p style="color:#bbb;font-size:14px;padding:8px 0;">없음</p>';
+    const byBook = {};
+    cards.forEach(c => { if(!byBook[c.book_name]) byBook[c.book_name]=[]; byBook[c.book_name].push(c); });
+    return Object.entries(byBook).map(([bk, cs]) =>
+      `<div style="margin-bottom:10px;">
+        <div style="font-size:11px;color:#999;font-weight:700;margin-bottom:4px;">${bk}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${cs.map(c =>
+          `<span class="sc-chip rarity-chip-${c.rarity||1}">${c.name}${c.tradeable_qty > 1 ? `<span style="font-size:10px;opacity:0.8;"> ×${c.tradeable_qty}</span>` : ''}</span>`
+        ).join('')}</div>
+      </div>`
+    ).join('');
+  };
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-secondary btn-sm" onclick="guildBack()">← 목록</button>
+        <h1 style="margin:0;font-size:20px;"><strong>${targetUserName}</strong>님과 카드 비교</h1>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <div class="card compare-give">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span style="font-size:22px;">📤</span>
+          <h3 style="color:#27ae60;">내가 줄 수 있는 카드</h3>
+          <span class="compare-count give">${canGive.length}</span>
+        </div>
+        <p style="font-size:12px;color:#888;margin-bottom:16px;">내가 여분 있음 + ${targetUserName}님이 없음</p>
+        ${renderChips(canGive)}
+      </div>
+      <div class="card compare-receive">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span style="font-size:22px;">📥</span>
+          <h3 style="color:#3498db;">내가 받을 수 있는 카드</h3>
+          <span class="compare-count receive">${canReceive.length}</span>
+        </div>
+        <p style="font-size:12px;color:#888;margin-bottom:16px;">${targetUserName}님이 여분 있음 + 내가 없음</p>
+        ${renderChips(canReceive)}
+      </div>
+    </div>
+  `;
 }
 
-function openGuildCardAddModal() {
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay show';
-  overlay.id = 'guildCardModal';
-  overlay.innerHTML = `<div class="modal" style="max-width:420px;">
-    <h2 style="margin-bottom:20px;">🃏 카드 추가</h2>
-    <div class="form-group">
-      <label>카드 이름 *</label>
-      <input type="text" id="gcName" placeholder="카드 이름 입력">
-    </div>
-    <div class="form-group">
-      <label>카테고리</label>
-      <input type="text" id="gcCategory" placeholder="예: 공격, 방어, 마법 등" value="기타">
-    </div>
-    <div class="form-group">
-      <label>설명 (선택)</label>
-      <input type="text" id="gcDesc" placeholder="카드 설명">
-    </div>
+// ─── 관리자: 스티커북 추가 ───
+function guildAddBook() {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal" style="max-width:400px;">
+    <h2>📖 스티커북 추가</h2>
+    <div class="form-group"><label>이름 *</label><input id="gbName" type="text" placeholder="예: 야생몬스터"></div>
+    <div class="form-group"><label>정렬 순서</label><input id="gbOrder" type="number" value="0"></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="document.getElementById('guildCardModal').remove()">취소</button>
-      <button class="btn btn-primary" onclick="addGuildCard()">추가</button>
+      <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">취소</button>
+      <button class="btn btn-primary" onclick="guildSaveBook(null)">추가</button>
     </div>
   </div>`;
-  document.body.appendChild(overlay);
-  document.getElementById('gcName').focus();
+  document.body.appendChild(ov);
+  document.getElementById('gbName').focus();
 }
 
-async function addGuildCard() {
-  const name = document.getElementById('gcName').value.trim();
-  const category = document.getElementById('gcCategory').value.trim() || '기타';
-  const description = document.getElementById('gcDesc').value.trim();
-  if (!name) { showToast('카드 이름을 입력하세요', 'error'); return; }
+function guildEditBook(id, name, order) {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal" style="max-width:400px;">
+    <h2>📖 스티커북 편집</h2>
+    <div class="form-group"><label>이름 *</label><input id="gbName" type="text" value="${name}"></div>
+    <div class="form-group"><label>정렬 순서</label><input id="gbOrder" type="number" value="${order}"></div>
+    <div class="form-group"><label>커버 이미지 경로</label><input id="gbCover" type="text" placeholder="/cards/book1/cover.jpg"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">취소</button>
+      <button class="btn btn-primary" onclick="guildSaveBook(${id})">저장</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+async function guildSaveBook(id) {
+  const name = document.getElementById('gbName').value.trim();
+  const order = parseInt(document.getElementById('gbOrder').value) || 0;
+  const cover = document.getElementById('gbCover')?.value.trim() || '';
+  if (!name) { showToast('이름을 입력하세요', 'error'); return; }
   try {
-    await api('/api/guild/cards', { method: 'POST', body: { name, category, description } });
-    document.getElementById('guildCardModal')?.remove();
-    showToast(`"${name}" 카드가 추가되었습니다`, 'success');
+    if (id) {
+      await api(`/api/guild/books/${id}`, { method: 'PUT', body: { name, sort_order: order, cover_image_path: cover } });
+    } else {
+      await api('/api/guild/books', { method: 'POST', body: { name, sort_order: order } });
+    }
+    document.querySelector('.modal-overlay')?.remove();
+    showToast('저장됐습니다', 'success');
+    guildView = 'overview';
     renderGuildCards(document.getElementById('mainContent'));
   } catch(e) { showToast(e.message, 'error'); }
 }
 
-async function deleteGuildCard(id, name) {
-  if (!confirm(`"${name}" 카드를 삭제하시겠습니까?\n모든 길드원의 해당 카드 데이터도 삭제됩니다.`)) return;
+async function guildDeleteBook(id, name) {
+  if (!confirm(`"${name}" 스티커북과 모든 카드 데이터를 삭제하시겠습니까?`)) return;
+  try {
+    await api(`/api/guild/books/${id}`, { method: 'DELETE' });
+    showToast('삭제됐습니다', 'success');
+    guildView = 'overview';
+    renderGuildCards(document.getElementById('mainContent'));
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ─── 관리자: 카드 추가/편집 ───
+function guildAddCard(bookId) {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal" style="max-width:400px;">
+    <h2>🃏 카드 추가</h2>
+    <div class="form-group"><label>카드 이름 *</label><input id="gcName" type="text"></div>
+    <div class="form-group"><label>위치 (1~9)</label><input id="gcPos" type="number" min="1" max="9" value="1"></div>
+    <div class="form-group"><label>레어도</label><select id="gcRarity">
+      <option value="1">★ 1성</option><option value="2">★★ 2성</option>
+      <option value="3">★★★ 3성</option><option value="4">★★★★ 4성</option>
+    </select></div>
+    <div class="form-group"><label>이미지 경로</label><input id="gcImg" type="text" placeholder="/cards/book1/card1.jpg"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">취소</button>
+      <button class="btn btn-primary" onclick="guildSaveCard(null,${bookId})">추가</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('gcName').focus();
+}
+
+function guildEditCard(id, name, rarity, imgPath, bookId) {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal" style="max-width:400px;">
+    <h2>🃏 카드 편집</h2>
+    <div class="form-group"><label>카드 이름</label><input id="gcName" type="text" value="${name}"></div>
+    <div class="form-group"><label>위치 (1~9)</label><input id="gcPos" type="number" min="1" max="9"></div>
+    <div class="form-group"><label>레어도</label><select id="gcRarity">
+      <option value="1" ${rarity==1?'selected':''}>★ 1성</option>
+      <option value="2" ${rarity==2?'selected':''}>★★ 2성</option>
+      <option value="3" ${rarity==3?'selected':''}>★★★ 3성</option>
+      <option value="4" ${rarity==4?'selected':''}>★★★★ 4성</option>
+    </select></div>
+    <div class="form-group"><label>이미지 경로</label><input id="gcImg" type="text" value="${imgPath}"></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger btn-sm" onclick="guildDeleteCard(${id},'${name.replace(/'/g,"\\'")}')">삭제</button>
+      <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">취소</button>
+      <button class="btn btn-primary" onclick="guildSaveCard(${id},${bookId})">저장</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+async function guildSaveCard(id, bookId) {
+  const name = document.getElementById('gcName').value.trim();
+  const pos = parseInt(document.getElementById('gcPos').value) || 1;
+  const rarity = parseInt(document.getElementById('gcRarity').value) || 1;
+  const img = document.getElementById('gcImg').value.trim();
+  if (!name) { showToast('카드 이름을 입력하세요', 'error'); return; }
+  try {
+    if (id) {
+      await api(`/api/guild/cards/${id}`, { method: 'PUT', body: { name, position: pos, rarity, image_path: img } });
+    } else {
+      await api('/api/guild/cards', { method: 'POST', body: { book_id: bookId, name, position: pos, rarity, image_path: img } });
+    }
+    document.querySelector('.modal-overlay')?.remove();
+    showToast('저장됐습니다', 'success');
+    renderGuildBook(document.getElementById('mainContent'), bookId, guildCurrentBookName);
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function guildDeleteCard(id, name) {
+  if (!confirm(`"${name}" 카드를 삭제하시겠습니까?`)) return;
   try {
     await api(`/api/guild/cards/${id}`, { method: 'DELETE' });
-    showToast(`"${name}" 카드가 삭제되었습니다`, 'success');
-    renderGuildCards(document.getElementById('mainContent'));
+    document.querySelector('.modal-overlay')?.remove();
+    showToast('삭제됐습니다', 'success');
+    renderGuildBook(document.getElementById('mainContent'), guildCurrentBookId, guildCurrentBookName);
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ─── 관리자: 카드 일괄 등록 ───
+function guildBulkAddCards(bookId) {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal" style="max-width:480px;">
+    <h2>📋 카드 일괄 등록</h2>
+    <p style="font-size:13px;color:#888;margin-bottom:16px;">카드 이름 9개를 한 줄씩 입력하세요 (위치 1→9 순서, 기존 카드는 삭제됩니다)</p>
+    <div class="form-group">
+      <label>카드 이름 (한 줄 = 1장)</label>
+      <textarea id="gcBulk" rows="10" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-family:inherit;font-size:14px;resize:vertical;box-sizing:border-box;" placeholder="카드1&#10;카드2&#10;카드3&#10;카드4&#10;카드5&#10;카드6&#10;카드7&#10;카드8&#10;카드9"></textarea>
+    </div>
+    <div class="form-group">
+      <label>기본 레어도 (공통 적용)</label>
+      <select id="gcBulkRarity"><option value="1">★</option><option value="2">★★</option><option value="3" selected>★★★</option><option value="4">★★★★</option></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">취소</button>
+      <button class="btn btn-primary" onclick="guildSubmitBulk(${bookId})">등록</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('gcBulk').focus();
+}
+
+async function guildSubmitBulk(bookId) {
+  const text = document.getElementById('gcBulk').value;
+  const rarity = parseInt(document.getElementById('gcBulkRarity').value) || 1;
+  const names = text.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!names.length) { showToast('카드 이름을 입력하세요', 'error'); return; }
+  try {
+    await api(`/api/guild/books/${bookId}/cards/bulk`, { method: 'POST', body: { names, rarity } });
+    document.querySelector('.modal-overlay')?.remove();
+    showToast(`${names.length}장 등록 완료`, 'success');
+    renderGuildBook(document.getElementById('mainContent'), bookId, guildCurrentBookName);
   } catch(e) { showToast(e.message, 'error'); }
 }
 
