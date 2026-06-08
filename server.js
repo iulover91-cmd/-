@@ -10,6 +10,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'freelancer.db');
 
+// DB 디렉토리가 없으면 자동 생성
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+
 let db; // sql.js 데이터베이스 인스턴스
 
 // 기본 영상/미디어 확장자 목록
