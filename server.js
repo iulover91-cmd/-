@@ -8,7 +8,7 @@ const initSqlJs = require('sql.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DB_PATH = path.join(__dirname, 'freelancer.db');
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'freelancer.db');
 
 let db; // sql.js 데이터베이스 인스턴스
 
@@ -258,6 +258,161 @@ async function main() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // 길드 카드 테이블 마이그레이션 (구버전 스키마 감지 후 교체)
+  try {
+    const oldSchema = getSql("SELECT sql FROM sqlite_master WHERE type='table' AND name='guild_cards'");
+    if (oldSchema && oldSchema.sql && !oldSchema.sql.includes('book_id')) {
+      db.run("DROP TABLE IF EXISTS user_card_inventory"); saveDb();
+      db.run("DROP TABLE IF EXISTS guild_cards"); saveDb();
+    }
+  } catch(e) {}
+
+  execSql(`
+    CREATE TABLE IF NOT EXISTS guild_sticker_books (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      cover_image_path TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS guild_cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 1,
+      rarity INTEGER NOT NULL DEFAULT 1,
+      image_path TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (book_id) REFERENCES guild_sticker_books(id)
+    );
+    CREATE TABLE IF NOT EXISTS user_card_quantity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      card_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, card_id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (card_id) REFERENCES guild_cards(id)
+    );
+  `);
+
+  // 스티커북 초기 데이터
+  {
+    const bookCount = getSql("SELECT COUNT(*) as cnt FROM guild_sticker_books");
+    if (bookCount.cnt === 0) {
+      const SEED = [
+        { name: '야생몬스터', order: 1, cards: [
+          {p:1,n:'사방에서 숙숙!',r:2},{p:2,n:'날카로운 발톱',r:2},{p:3,n:'자신만만한 검객',r:1},
+          {p:4,n:'불길한 창조',r:2},{p:5,n:'영혼의 속삭임',r:2},{p:6,n:'창처럼 날카로운',r:2},
+          {p:7,n:'닭? 독수리?',r:1},{p:8,n:'작은 날개의 휴식',r:1},{p:9,n:'사악한 뼈',r:2}
+        ]},
+        { name: '물속 몬스터', order: 2, cards: [
+          {p:1,n:'젤만',r:2},{p:2,n:'겁진 주회',r:3},{p:3,n:'분홍색 구름',r:3},
+          {p:4,n:'황금왕관 구름',r:3},{p:5,n:'무감성',r:2},{p:6,n:'물속 수겆',r:1},
+          {p:7,n:'바위 주먹',r:1},{p:8,n:'진진 통화',r:2},{p:9,n:'유령선의 비밀',r:2}
+        ]},
+        { name: '던전 몬스터', order: 3, cards: [
+          {p:1,n:'지배한 알심',r:2},{p:2,n:'정하니...',r:2},{p:3,n:'철벽 쉬어',r:3},
+          {p:4,n:'단호한 일격',r:3},{p:5,n:'아이의 분노',r:3},{p:6,n:'끊뇨는 것',r:3},
+          {p:7,n:'배이른 용기',r:4},{p:8,n:'굳건한 자승',r:4},{p:9,n:'탑의 최상층에서',r:4}
+        ]},
+        { name: '메인 스토리', order: 4, cards: [
+          {p:1,n:'위대한 탄생',r:3},{p:2,n:'검은 에너지',r:3},{p:3,n:'흥분하는 번개',r:3},
+          {p:4,n:'분노의 감정',r:4},{p:5,n:'연낙설의 부홀',r:4},{p:6,n:'포효의 침',r:3},
+          {p:7,n:'위기 속 삼삼하',r:4},{p:8,n:'긴장되는 순간',r:4},{p:9,n:'선연한 강비',r:4}
+        ]},
+        { name: '숲속 생활', order: 5, cards: [
+          {p:1,n:'천진 우산',r:2},{p:2,n:'친호 세수',r:3},{p:3,n:'파란 통방',r:2},
+          {p:4,n:'하로 시신',r:3},{p:5,n:'잘아는 토끼',r:3},{p:6,n:'위험한 장난',r:3},
+          {p:7,n:'뭐 오는 길인 산책',r:3},{p:8,n:'무슨 일이야?',r:3},{p:9,n:'숲속의 밤',r:4}
+        ]},
+        { name: '화산지대', order: 6, cards: [
+          {p:1,n:'불꽃의 맞주',r:2},{p:2,n:'용암정 고시다',r:2},{p:3,n:'친 낭놀이',r:3},
+          {p:4,n:'화염의 지배자',r:3},{p:5,n:'보금의 시신',r:3},{p:6,n:'화염의 포효',r:3},
+          {p:7,n:'불꽃의 탄생',r:3},{p:8,n:'무너지는 산악',r:3},{p:9,n:'지옥의 불길',r:4}
+        ]},
+        { name: '어둠속 존재', order: 7, cards: [
+          {p:1,n:'은밀한 습격',r:3},{p:2,n:'달빛 아래',r:3},{p:3,n:'우주',r:3},
+          {p:4,n:'수정 조각',r:3},{p:5,n:'어두운 사슬',r:3},{p:6,n:'용암 지대',r:4},
+          {p:7,n:'검은 오라',r:4},{p:8,n:'마법',r:4},{p:9,n:'목적지',r:4}
+        ]},
+        { name: '특별한 장소', order: 8, cards: [
+          {p:1,n:'행복의 왕자',r:2},{p:2,n:'가사도',r:3},{p:3,n:'상트',r:3},
+          {p:4,n:'락숙 친구',r:3},{p:5,n:'관한 조회',r:3},{p:6,n:'선진올전 따애모',r:3},
+          {p:7,n:'서넉스 무대',r:4},{p:8,n:'마녀의 집',r:4},{p:9,n:'두 짤깔',r:4}
+        ]},
+        { name: '놀이시간', order: 9, cards: [
+          {p:1,n:'자기 키!',r:1},{p:2,n:'뚝한 조심!',r:2},{p:3,n:'낚시볼 하하고',r:2},
+          {p:4,n:'찰한 사냥',r:3},{p:5,n:'수영 후',r:3},{p:6,n:'거기 서!',r:3},
+          {p:7,n:'남빈한 목직임',r:3},{p:8,n:'잔전',r:4},{p:9,n:'베비 대장',r:4}
+        ]},
+        { name: '강철 쇼크', order: 10, cards: [
+          {p:1,n:'토키 친구들',r:2},{p:2,n:'내리치는 번개',r:2},{p:3,n:'쏟아지는 번개',r:3},
+          {p:4,n:'은밀한 사격',r:3},{p:5,n:'전기 충전',r:3},{p:6,n:'사과 베기!',r:3},
+          {p:7,n:'날카로운 검',r:4},{p:8,n:'돌아가는 태업',r:4},{p:9,n:'태업의 성',r:4}
+        ]},
+        { name: '요정의 숲', order: 11, cards: [
+          {p:1,n:'꿀 수집가',r:2},{p:2,n:'화관',r:3},{p:3,n:'버섯',r:3},
+          {p:4,n:'별과 잠',r:3},{p:5,n:'유령과 등불',r:3},{p:6,n:'개미와 디저트',r:3},
+          {p:7,n:'디저트 파티',r:4},{p:8,n:'사랑 비',r:4},{p:9,n:'장미 정원',r:3}
+        ]},
+        { name: '바다 아래', order: 12, cards: [
+          {p:1,n:'카드 1',r:2},{p:2,n:'카드 2',r:2},{p:3,n:'카드 3',r:3},
+          {p:4,n:'카드 4',r:3},{p:5,n:'카드 5',r:3},{p:6,n:'카드 6',r:3},
+          {p:7,n:'카드 7',r:4},{p:8,n:'카드 8',r:4},{p:9,n:'카드 9',r:4}
+        ]},
+        { name: '유령 마을', order: 13, cards: [
+          {p:1,n:'봉대',r:2},{p:2,n:'눈물 가려도',r:2},{p:3,n:'흑과 백',r:2},
+          {p:4,n:'모래 다이빙',r:3},{p:5,n:'멋진 뼈',r:3},{p:6,n:'도깨비불',r:3},
+          {p:7,n:'슬바꽥질',r:4},{p:8,n:'은밀하게',r:4},{p:9,n:'그림자 번개',r:4}
+        ]},
+        { name: '빛 아래', order: 14, cards: [
+          {p:1,n:'휴입자',r:3},{p:2,n:'나도 배지고 싶어',r:3},{p:3,n:'선물 시간',r:3},
+          {p:4,n:'적은 친구',r:4},{p:5,n:'용희',r:4},{p:6,n:'화희',r:3},
+          {p:7,n:'경잠',r:4},{p:8,n:'꽃과 나비',r:4},{p:9,n:'타포',r:3}
+        ]},
+        { name: '하늘나라', order: 15, cards: [
+          {p:1,n:'빛과 나비',r:3},{p:2,n:'구름 같은',r:3},{p:3,n:'꿈에',r:3},
+          {p:4,n:'황금',r:4},{p:5,n:'구름 위 잠',r:4},{p:6,n:'해태',r:3},
+          {p:7,n:'재밌어',r:4},{p:8,n:'요정의 가루',r:4},{p:9,n:'빛의 비행',r:3}
+        ]},
+        { name: '따스한 여름', order: 16, cards: [
+          {p:1,n:'여의주',r:2},{p:2,n:'호기심',r:2},{p:3,n:'따사로운 아침',r:3},
+          {p:4,n:'가장 행복한 시간',r:4},{p:5,n:'고기가 최고야',r:4},{p:6,n:'폭포 아래',r:3},
+          {p:7,n:'패진 바위',r:4},{p:8,n:'호수 전경',r:4},{p:9,n:'상처와 친구',r:3}
+        ]},
+        { name: '차가운 겨울', order: 17, cards: [
+          {p:1,n:'냉기 바람',r:2},{p:2,n:'혹한의 포효',r:2},{p:3,n:'눈보라',r:4},
+          {p:4,n:'넌 너무 차가워',r:4},{p:5,n:'챔피언...?',r:4},{p:6,n:'흩날리는 눈꽃',r:3},
+          {p:7,n:'시린 냉기',r:4},{p:8,n:'마법의 빛',r:4},{p:9,n:'겨울의 바람',r:4}
+        ]},
+        { name: '나쁜놈 오전', order: 18, cards: [
+          {p:1,n:'피어나는 꽃',r:2},{p:2,n:'자연의 아름다움',r:3},{p:3,n:'새들의 지저귐',r:4},
+          {p:4,n:'무지개 산책',r:4},{p:5,n:'겁쟁이',r:4},{p:6,n:'친구',r:3},
+          {p:7,n:'모두 사이좋게',r:4},{p:8,n:'노래와 낮잠',r:4},{p:9,n:'봄의 햇살',r:3}
+        ]},
+        { name: '활발한 오후', order: 19, cards: [
+          {p:1,n:'바닷속 유영',r:3},{p:2,n:'아야!',r:3},{p:3,n:'째려보기',r:4},
+          {p:4,n:'이건 내 거야',r:4},{p:5,n:'이것도 내 거야',r:4},{p:6,n:'한 번 더',r:3},
+          {p:7,n:'넌 누구니?',r:4},{p:8,n:'사냥 시간',r:4},{p:9,n:'자유로운 공연',r:4}
+        ]},
+        { name: '조용한 밤', order: 20, cards: [
+          {p:1,n:'같이 잘래?',r:3},{p:2,n:'혼자는 무서워',r:4},{p:3,n:'빛나는 꼬리',r:3},
+          {p:4,n:'동굴 속 길잡이',r:4},{p:5,n:'불길한 오라',r:4},{p:6,n:'공포의 성',r:4},
+          {p:7,n:'달과 밤',r:4},{p:8,n:'달빛의 호수',r:4},{p:9,n:'암울한 전조',r:4}
+        ]}
+      ];
+      for (const book of SEED) {
+        const br = runSql('INSERT INTO guild_sticker_books (name, sort_order) VALUES (?,?)', [book.name, book.order]);
+        for (const c of book.cards) {
+          runSql('INSERT INTO guild_cards (book_id, name, position, rarity) VALUES (?,?,?,?)', [br.lastInsertRowid, c.n, c.p, c.r]);
+        }
+      }
+      console.log('[초기화] 스티커북 20종 / 카드 180장 기초 데이터 삽입 완료');
+    }
+  }
 
   // 활동 로그 헬퍼
   function addLog(userId, userName, action, detail, targetType, targetId) {
@@ -1651,6 +1806,235 @@ td{padding:8px 10px;border-bottom:1px solid #eee;}
   app.delete('/api/contract-documents/:id', requireAdmin, (req, res) => {
     runSql('DELETE FROM contract_documents WHERE id = ?', [parseInt(req.params.id)]);
     res.json({ success: true });
+  });
+
+  // ============ 길드 카드 거래 API ============
+
+  function requireLogin(req, res, next) {
+    if (!req.session.userId) return res.status(401).json({ error: '로그인이 필요합니다' });
+    next();
+  }
+
+  // 스티커북 목록 (내 보유 통계 포함)
+  app.get('/api/guild/books', requireLogin, (req, res) => {
+    const userId = req.session.userId;
+    const books = allSql(`
+      SELECT b.*,
+        (SELECT COUNT(*) FROM guild_cards WHERE book_id = b.id) as total_cards,
+        (SELECT COUNT(*) FROM guild_cards c
+         LEFT JOIN user_card_quantity uq ON uq.card_id = c.id AND uq.user_id = ?
+         WHERE c.book_id = b.id AND COALESCE(uq.quantity,0) > 0) as owned_cards,
+        (SELECT COALESCE(SUM(CASE WHEN uq.quantity > 1 THEN uq.quantity-1 ELSE 0 END),0)
+         FROM guild_cards c LEFT JOIN user_card_quantity uq ON uq.card_id = c.id AND uq.user_id = ?
+         WHERE c.book_id = b.id) as tradeable_total
+      FROM guild_sticker_books b ORDER BY b.sort_order, b.id
+    `, [userId, userId]);
+    res.json(books);
+  });
+
+  // 스티커북 추가 (관리자)
+  app.post('/api/guild/books', requireAdmin, (req, res) => {
+    const { name, sort_order } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: '이름을 입력하세요' });
+    const r = runSql('INSERT INTO guild_sticker_books (name, sort_order) VALUES (?,?)', [name.trim(), parseInt(sort_order)||0]);
+    res.json({ success: true, id: r.lastInsertRowid });
+  });
+
+  // 스티커북 수정 (관리자)
+  app.put('/api/guild/books/:id', requireAdmin, (req, res) => {
+    const id = parseInt(req.params.id);
+    const { name, sort_order, cover_image_path } = req.body;
+    runSql('UPDATE guild_sticker_books SET name=?, sort_order=?, cover_image_path=? WHERE id=?',
+      [name?.trim()||'', parseInt(sort_order)||0, cover_image_path||'', id]);
+    res.json({ success: true });
+  });
+
+  // 스티커북 삭제 (관리자)
+  app.delete('/api/guild/books/:id', requireAdmin, (req, res) => {
+    const id = parseInt(req.params.id);
+    const cards = allSql('SELECT id FROM guild_cards WHERE book_id=?', [id]);
+    for (const c of cards) runSql('DELETE FROM user_card_quantity WHERE card_id=?', [c.id]);
+    runSql('DELETE FROM guild_cards WHERE book_id=?', [id]);
+    runSql('DELETE FROM guild_sticker_books WHERE id=?', [id]);
+    res.json({ success: true });
+  });
+
+  // 특정 스티커북의 카드 목록 (내 수량 포함)
+  app.get('/api/guild/books/:bookId/cards', requireLogin, (req, res) => {
+    const bookId = parseInt(req.params.bookId);
+    const userId = req.session.userId;
+    const cards = allSql(`
+      SELECT c.*, COALESCE(uq.quantity, 0) as my_quantity
+      FROM guild_cards c
+      LEFT JOIN user_card_quantity uq ON uq.card_id = c.id AND uq.user_id = ?
+      WHERE c.book_id = ?
+      ORDER BY c.position
+    `, [userId, bookId]);
+    res.json(cards);
+  });
+
+  // 카드 추가 (관리자)
+  app.post('/api/guild/cards', requireAdmin, (req, res) => {
+    const { book_id, name, position, rarity, image_path } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: '카드 이름을 입력하세요' });
+    if (!book_id) return res.status(400).json({ error: '스티커북을 선택하세요' });
+    const r = runSql('INSERT INTO guild_cards (book_id, name, position, rarity, image_path) VALUES (?,?,?,?,?)',
+      [parseInt(book_id), name.trim(), parseInt(position)||1, parseInt(rarity)||1, image_path||'']);
+    res.json({ success: true, id: r.lastInsertRowid });
+  });
+
+  // 카드 일괄 등록 (관리자 - 9개 이름을 한번에)
+  app.post('/api/guild/books/:bookId/cards/bulk', requireAdmin, (req, res) => {
+    const bookId = parseInt(req.params.bookId);
+    const { names, rarity = 1 } = req.body; // names: array of 9 strings
+    if (!Array.isArray(names) || names.length === 0) return res.status(400).json({ error: '카드 이름 목록을 입력하세요' });
+    runSql('DELETE FROM user_card_quantity WHERE card_id IN (SELECT id FROM guild_cards WHERE book_id=?)', [bookId]);
+    runSql('DELETE FROM guild_cards WHERE book_id=?', [bookId]);
+    const cards = [];
+    names.forEach((name, i) => {
+      if (name?.trim()) {
+        const r = runSql('INSERT INTO guild_cards (book_id, name, position, rarity) VALUES (?,?,?,?)',
+          [bookId, name.trim(), i+1, parseInt(rarity)||1]);
+        cards.push({ id: r.lastInsertRowid, name: name.trim(), position: i+1 });
+      }
+    });
+    res.json({ success: true, cards });
+  });
+
+  // 카드 수정 (관리자)
+  app.put('/api/guild/cards/:id', requireAdmin, (req, res) => {
+    const id = parseInt(req.params.id);
+    const { name, position, rarity, image_path } = req.body;
+    runSql('UPDATE guild_cards SET name=?, position=?, rarity=?, image_path=? WHERE id=?',
+      [name?.trim()||'', parseInt(position)||1, parseInt(rarity)||1, image_path||'', id]);
+    res.json({ success: true });
+  });
+
+  // 카드 삭제 (관리자)
+  app.delete('/api/guild/cards/:id', requireAdmin, (req, res) => {
+    const id = parseInt(req.params.id);
+    runSql('DELETE FROM user_card_quantity WHERE card_id=?', [id]);
+    runSql('DELETE FROM guild_cards WHERE id=?', [id]);
+    res.json({ success: true });
+  });
+
+  // 카드 수량 조정 (+1 / -1) — 실시간 저장
+  app.post('/api/guild/cards/:id/quantity', requireLogin, (req, res) => {
+    const cardId = parseInt(req.params.id);
+    const userId = req.session.userId;
+    const delta = req.body.delta === 1 ? 1 : -1;
+    const card = getSql('SELECT id FROM guild_cards WHERE id=?', [cardId]);
+    if (!card) return res.status(404).json({ error: '카드를 찾을 수 없습니다' });
+    const cur = getSql('SELECT quantity FROM user_card_quantity WHERE user_id=? AND card_id=?', [userId, cardId]);
+    const newQty = Math.max(0, (cur ? cur.quantity : 0) + delta);
+    if (cur) {
+      runSql('UPDATE user_card_quantity SET quantity=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND card_id=?', [newQty, userId, cardId]);
+    } else {
+      runSql('INSERT INTO user_card_quantity (user_id, card_id, quantity) VALUES (?,?,?)', [userId, cardId, newQty]);
+    }
+    res.json({ success: true, quantity: newQty });
+  });
+
+  // 길드원 목록 (통계 포함)
+  app.get('/api/guild/members', requireLogin, (req, res) => {
+    const myUserId = req.session.userId;
+    const members = allSql(`
+      SELECT u.id, u.display_name,
+        (SELECT COUNT(DISTINCT uq.card_id) FROM user_card_quantity uq WHERE uq.user_id=u.id AND uq.quantity>0) as owned_count,
+        (SELECT COALESCE(SUM(CASE WHEN uq.quantity>1 THEN uq.quantity-1 ELSE 0 END),0)
+         FROM user_card_quantity uq WHERE uq.user_id=u.id) as tradeable_count
+      FROM users u WHERE u.id != ? ORDER BY u.display_name
+    `, [myUserId]);
+    res.json(members);
+  });
+
+  // 특정 길드원과 카드 비교
+  // A(나)가 줄 수 있는 카드: 내 qty>1 AND 상대방 qty=0 (상대방이 없는 카드)
+  // A(나)가 받을 수 있는 카드: 상대방 qty>1 AND 내 qty=0 (내가 없는 카드)
+  app.get('/api/guild/compare/:userId', requireLogin, (req, res) => {
+    const myUserId = req.session.userId;
+    const targetUserId = parseInt(req.params.userId);
+    const targetUser = getSql('SELECT id, display_name FROM users WHERE id=?', [targetUserId]);
+    if (!targetUser) return res.status(404).json({ error: '사용자를 찾을 수 없습니다' });
+
+    const canGive = allSql(`
+      SELECT gc.id, gc.name, gc.rarity, gc.image_path, gsb.name as book_name,
+        (my.quantity - 1) as tradeable_qty
+      FROM guild_cards gc
+      JOIN guild_sticker_books gsb ON gsb.id = gc.book_id
+      JOIN user_card_quantity my ON my.card_id=gc.id AND my.user_id=? AND my.quantity>1
+      LEFT JOIN user_card_quantity their ON their.card_id=gc.id AND their.user_id=?
+      WHERE COALESCE(their.quantity,0) = 0
+      ORDER BY gsb.sort_order, gc.position
+    `, [myUserId, targetUserId]);
+
+    const canReceive = allSql(`
+      SELECT gc.id, gc.name, gc.rarity, gc.image_path, gsb.name as book_name,
+        (their.quantity - 1) as tradeable_qty
+      FROM guild_cards gc
+      JOIN guild_sticker_books gsb ON gsb.id = gc.book_id
+      JOIN user_card_quantity their ON their.card_id=gc.id AND their.user_id=? AND their.quantity>1
+      LEFT JOIN user_card_quantity my ON my.card_id=gc.id AND my.user_id=?
+      WHERE COALESCE(my.quantity,0) = 0
+      ORDER BY gsb.sort_order, gc.position
+    `, [targetUserId, myUserId]);
+
+    res.json({ targetUser, canGive, canReceive });
+  });
+
+  // ============ 공개 길드 카드 현황 (로그인 불필요) ============
+
+  // 전체 요약: 스티커북별 모든 유저 보유 현황
+  app.get('/api/guild/public/summary', (req, res) => {
+    const books = allSql('SELECT * FROM guild_sticker_books ORDER BY sort_order, id');
+    const members = allSql(`
+      SELECT u.id, u.display_name,
+        (SELECT COUNT(DISTINCT uq.card_id) FROM user_card_quantity uq WHERE uq.user_id=u.id AND uq.quantity>0) as owned_count,
+        (SELECT COALESCE(SUM(CASE WHEN uq.quantity>1 THEN uq.quantity-1 ELSE 0 END),0)
+         FROM user_card_quantity uq WHERE uq.user_id=u.id) as tradeable_count
+      FROM users u ORDER BY u.display_name
+    `);
+    const totalCards = getSql('SELECT COUNT(*) as cnt FROM guild_cards')?.cnt || 0;
+
+    // 스티커북별 각 멤버 보유 수
+    const detail = books.map(b => {
+      const bookCards = getSql('SELECT COUNT(*) as cnt FROM guild_cards WHERE book_id=?', [b.id])?.cnt || 0;
+      const memberProgress = members.map(m => {
+        const owned = getSql(`SELECT COUNT(*) as cnt FROM guild_cards c
+          LEFT JOIN user_card_quantity uq ON uq.card_id=c.id AND uq.user_id=?
+          WHERE c.book_id=? AND COALESCE(uq.quantity,0)>0`, [m.id, b.id])?.cnt || 0;
+        const tradeable = getSql(`SELECT COALESCE(SUM(CASE WHEN uq.quantity>1 THEN uq.quantity-1 ELSE 0 END),0) as t
+          FROM guild_cards c LEFT JOIN user_card_quantity uq ON uq.card_id=c.id AND uq.user_id=?
+          WHERE c.book_id=?`, [m.id, b.id])?.t || 0;
+        return { userId: m.id, owned, tradeable };
+      });
+      return { ...b, total: bookCards, memberProgress };
+    });
+    res.json({ books: detail, members, totalCards, updatedAt: new Date().toISOString() });
+  });
+
+  // 특정 멤버의 전체 카드 현황
+  app.get('/api/guild/public/member/:userId', (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const user = getSql('SELECT id, display_name FROM users WHERE id=?', [userId]);
+    if (!user) return res.status(404).json({ error: '없는 유저입니다' });
+    const books = allSql('SELECT * FROM guild_sticker_books ORDER BY sort_order, id');
+    const result = books.map(b => {
+      const cards = allSql(`
+        SELECT c.id, c.name, c.position, c.rarity, c.image_path,
+          COALESCE(uq.quantity,0) as quantity
+        FROM guild_cards c
+        LEFT JOIN user_card_quantity uq ON uq.card_id=c.id AND uq.user_id=?
+        WHERE c.book_id=? ORDER BY c.position
+      `, [userId, b.id]);
+      return { ...b, cards };
+    });
+    res.json({ user, books: result });
+  });
+
+  // 공개 페이지 서빙
+  app.get('/guild', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'guild.html'));
   });
 
   app.get('/', (req, res) => {
