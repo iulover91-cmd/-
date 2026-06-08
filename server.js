@@ -8,7 +8,7 @@ const initSqlJs = require('sql.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DB_PATH = path.join(__dirname, 'freelancer.db');
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'freelancer.db');
 
 let db; // sql.js 데이터베이스 인스턴스
 
