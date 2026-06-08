@@ -68,7 +68,9 @@ function execSql(sql) {
 
 // ============ 메인 시작 함수 ============
 async function main() {
-  const SQL = await initSqlJs();
+  const SQL = await initSqlJs({
+    locateFile: file => path.join(__dirname, 'node_modules', 'sql.js', 'dist', file)
+  });
 
   // 기존 DB 파일이 있으면 로드, 없으면 새로 생성
   if (fs.existsSync(DB_PATH)) {
@@ -1467,7 +1469,9 @@ ${files.length === 0 ? '<tr><td colspan="4" style="text-align:center;color:#888;
 
   app.post('/api/restore', requireAdmin, express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
     try {
-      const SQL = await initSqlJs();
+      const SQL = await initSqlJs({
+        locateFile: file => path.join(__dirname, 'node_modules', 'sql.js', 'dist', file)
+      });
       const testDb = new SQL.Database(new Uint8Array(req.body));
       // 기본 검증: users 테이블이 있는지
       const check = testDb.exec("SELECT COUNT(*) FROM users");
