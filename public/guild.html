@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>길드 카드 현황</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Segoe UI',-apple-system,sans-serif; background:#1a0f07; color:#f5e6c8; min-height:100vh; }
+
+    .header {
+      background: linear-gradient(135deg, #2c1a0e, #4a2c14);
+      border-bottom: 2px solid #8b5a2b;
+      padding: 16px 20px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    }
+    .header h1 { font-size: 20px; color: #f5c518; display: flex; align-items: center; gap: 8px; }
+    .header-meta { font-size: 12px; color: #aaa; }
+    .login-btn {
+      background: #302b63; color: #fff; border: none; border-radius: 8px;
+      padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .login-btn:hover { background: #24243e; }
+
+    .refresh-bar {
+      background: #2c1a0e;
+      border-bottom: 1px solid #4a2c14;
+      padding: 8px 20px;
+      display: flex; align-items: center; gap: 12px; font-size: 12px; color: #888;
+    }
+    .refresh-dot { width: 8px; height: 8px; border-radius: 50%; background: #27ae60; animation: pulse 2s infinite; flex-shrink: 0; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .refresh-timer { color: #f5c518; font-weight: 700; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px 16px; }
+
+    /* 멤버 요약 카드 */
+    .member-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .member-card {
+      background: linear-gradient(160deg, #2c1a0e, #3d2410);
+      border: 2px solid #5a3418;
+      border-radius: 12px;
+      padding: 14px 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .member-card:hover, .member-card.active { border-color: #f5c518; transform: translateY(-2px); }
+    .member-card.active { background: linear-gradient(160deg, #3d2c00, #5a4200); }
+    .member-name { font-size: 14px; font-weight: 700; color: #f5deb3; margin-bottom: 6px; }
+    .member-stats { display: flex; justify-content: center; gap: 12px; font-size: 12px; }
+    .stat-owned { color: #27ae60; font-weight: 700; }
+    .stat-trade { color: #3498db; font-weight: 700; }
+
+    /* 탭 */
+    .tabs { display: flex; gap: 0; border-bottom: 2px solid #4a2c14; margin-bottom: 16px; }
+    .tab {
+      padding: 10px 18px; border: none; background: none; cursor: pointer;
+      font-size: 13px; font-weight: 600; color: #888;
+      border-bottom: 3px solid transparent; margin-bottom: -2px; transition: color 0.15s;
+    }
+    .tab.active { color: #f5c518; border-bottom-color: #f5c518; }
+    .tab:hover { color: #f5deb3; }
+
+    /* 스티커북 개요 */
+    .sb-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+    }
+    .sb-tile {
+      background: linear-gradient(160deg, #2c1a0e, #4a2c14);
+      border: 2px solid #6b3a1a;
+      border-radius: 12px;
+      padding: 10px 8px 10px;
+      text-align: center;
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+    .sb-tile:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.4); }
+    .sb-tile.sb-full { border-color: #c9a227; }
+    .sb-cover { width: 100%; aspect-ratio: 1; border-radius: 8px; object-fit: cover; display: block; margin-bottom: 6px; background: rgba(0,0,0,0.3); }
+    .sb-cover-ph { display: flex; align-items: center; justify-content: center; font-size: 26px; }
+    .sb-name { font-size: 11px; font-weight: 700; color: #f5deb3; margin-bottom: 3px; }
+
+    /* 멤버별 스티커북 진행도 */
+    .sb-member-bars { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+    .sb-member-row { display: flex; align-items: center; gap: 4px; }
+    .sb-member-label { font-size: 9px; color: #888; min-width: 32px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sb-mini-bar { flex: 1; height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; }
+    .sb-mini-fill { height: 100%; border-radius: 3px; background: #27ae60; transition: width 0.3s; }
+    .sb-mini-fill.full { background: #f5c518; }
+    .sb-mini-text { font-size: 9px; color: #888; min-width: 22px; text-align: right; }
+    .sb-trade-tag { font-size: 9px; font-weight: 700; color: #3498db; }
+
+    /* 카드 상세 뷰 */
+    .book-header {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+    }
+    .back-btn {
+      background: rgba(255,255,255,0.1); color: #f5deb3; border: none; border-radius: 8px;
+      padding: 6px 14px; font-size: 13px; cursor: pointer;
+    }
+    .back-btn:hover { background: rgba(255,255,255,0.2); }
+    .card-grid-3 {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    }
+    .card-tile {
+      border-radius: 10px;
+      border: 2px solid #8b6340;
+      background: #2c1a0e;
+      overflow: hidden;
+    }
+    .card-tile.r4 { border-color: #c9a227; }
+    .card-top { padding: 4px; text-align: center; font-size: 10px; color: #c9a227; letter-spacing: 1px; }
+    .card-top.empty { color: #444; }
+    .card-img-wrap { position: relative; aspect-ratio: 3/4; background: #1a0f07; }
+    .card-img-wrap img { width:100%; height:100%; object-fit:cover; display:block; }
+    .card-img-ph { width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; background: linear-gradient(160deg,#2c1a0e,#1a0f07); }
+    .card-overlay { position:absolute; inset:0; background:rgba(0,0,0,0.55); }
+    .card-badge {
+      position:absolute; top:-4px; right:-4px;
+      background:#3498db; color:#fff;
+      font-size:13px; font-weight:900;
+      min-width:24px; height:24px;
+      border-radius:12px; padding:0 4px;
+      display:flex; align-items:center; justify-content:center;
+      border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.4);
+    }
+    .card-owned-dot { position:absolute; bottom:4px; right:4px; width:8px; height:8px; border-radius:50%; background:#27ae60; border:2px solid #fff; }
+    .card-name-bottom { padding:4px 4px 5px; font-size:9px; font-weight:700; text-align:center; color:#d4b896; line-height:1.2; min-height:22px; display:flex; align-items:center; justify-content:center; }
+
+    /* 비교 화면 */
+    .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .compare-panel { background: #2c1a0e; border-radius: 12px; padding: 16px; border: 2px solid #4a2c14; }
+    .compare-panel.give { border-top-color: #27ae60; }
+    .compare-panel.receive { border-top-color: #3498db; }
+    .compare-title { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 14px; font-weight: 700; }
+    .compare-title.give { color: #27ae60; }
+    .compare-title.receive { color: #3498db; }
+    .compare-count { margin-left: auto; font-size: 12px; padding: 2px 10px; border-radius: 10px; }
+    .compare-count.give { background: rgba(39,174,96,0.2); color: #27ae60; }
+    .compare-count.receive { background: rgba(52,152,219,0.2); color: #3498db; }
+    .compare-desc { font-size: 11px; color: #888; margin-bottom: 12px; }
+    .chip-group { margin-bottom: 8px; }
+    .chip-book { font-size: 10px; color: #888; font-weight: 700; margin-bottom: 4px; }
+    .chip-list { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 11px; font-weight: 600;
+    }
+    .chip.r1 { background:#333; color:#aaa; }
+    .chip.r2 { background:rgba(39,174,96,0.2); color:#27ae60; }
+    .chip.r3 { background:rgba(52,152,219,0.2); color:#3498db; }
+    .chip.r4 { background:rgba(201,162,39,0.2); color:#c9a227; border:1px solid rgba(201,162,39,0.4); }
+    .empty-msg { color:#555; font-size:13px; padding:8px 0; }
+
+    .section-title { font-size: 15px; font-weight: 700; color: #f5deb3; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+
+    .hidden { display: none !important; }
+    @media (max-width: 600px) {
+      .sb-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .member-summary { grid-template-columns: repeat(2, 1fr); }
+      .compare-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🃏 길드 카드 현황</h1>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <span class="header-meta" id="lastUpdated">로딩 중...</span>
+    <a href="/" class="login-btn">🔐 로그인</a>
+  </div>
+</div>
+
+<div class="refresh-bar">
+  <div class="refresh-dot"></div>
+  <span>30초마다 자동 갱신</span>
+  <span style="margin-left:4px;">다음 갱신까지: <span class="refresh-timer" id="timerDisp">30</span>초</span>
+  <button onclick="loadAll()" style="background:rgba(255,255,255,0.1);border:none;border-radius:6px;padding:3px 10px;font-size:11px;color:#ccc;cursor:pointer;margin-left:auto;">지금 갱신</button>
+</div>
+
+<div class="container">
+
+  <!-- 멤버 선택 -->
+  <div class="section-title">👥 길드원</div>
+  <div class="member-summary" id="memberList">로딩 중...</div>
+
+  <!-- 탭 -->
+  <div class="tabs" id="tabBar">
+    <button class="tab active" onclick="switchView('books')">📚 스티커북 현황</button>
+    <button class="tab" onclick="switchView('compare')" id="compareTabBtn" style="display:none">🔄 카드 비교</button>
+  </div>
+
+  <!-- 스티커북 전체 현황 -->
+  <div id="viewBooks">
+    <div class="sb-grid" id="bookGrid">로딩 중...</div>
+  </div>
+
+  <!-- 카드 상세 -->
+  <div id="viewBook" class="hidden">
+    <div class="book-header">
+      <button class="back-btn" onclick="backToBooks()">← 목록</button>
+      <h2 id="bookDetailName" style="font-size:18px;color:#f5c518;"></h2>
+    </div>
+    <div id="memberBookTabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;"></div>
+    <div class="card-grid-3" id="cardGrid3"></div>
+  </div>
+
+  <!-- 비교 화면 -->
+  <div id="viewCompare" class="hidden">
+    <div id="compareContent"></div>
+  </div>
+
+</div>
+
+<script>
+let allData = null;
+let selectedMemberId = null;
+let currentView = 'books';
+let currentBookId = null;
+let compareTargetId = null;
+let timerVal = 30;
+let timerInterval = null;
+
+async function loadAll() {
+  try {
+    const res = await fetch('/api/guild/public/summary');
+    allData = await res.json();
+    renderMemberList();
+    if (currentView === 'books') renderBookGrid();
+    else if (currentView === 'book' && currentBookId) renderBookDetail(currentBookId);
+    else if (currentView === 'compare' && compareTargetId) renderCompare(compareTargetId);
+    document.getElementById('lastUpdated').textContent = '최근 갱신: ' + new Date().toLocaleTimeString('ko-KR');
+  } catch(e) {
+    document.getElementById('lastUpdated').textContent = '갱신 실패';
+  }
+  resetTimer();
+}
+
+function resetTimer() {
+  timerVal = 30;
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timerVal--;
+    document.getElementById('timerDisp').textContent = timerVal;
+    if (timerVal <= 0) { loadAll(); }
+  }, 1000);
+}
+
+function renderMemberList() {
+  if (!allData) return;
+  const { members } = allData;
+  document.getElementById('memberList').innerHTML = members.map(m =>
+    `<div class="member-card ${selectedMemberId===m.id?'active':''}" onclick="selectMember(${m.id})">
+      <div class="member-name">${m.display_name}</div>
+      <div class="member-stats">
+        <span class="stat-owned">${m.owned_count}장</span>
+        <span class="stat-trade">${m.tradeable_count>0?'+'+m.tradeable_count:'-'}</span>
+      </div>
+    </div>`
+  ).join('');
+}
+
+function selectMember(id) {
+  selectedMemberId = (selectedMemberId === id) ? null : id;
+  renderMemberList();
+  if (currentView === 'books') renderBookGrid();
+  else if (currentView === 'book' && currentBookId) renderBookDetail(currentBookId);
+  else if (currentView === 'compare' && compareTargetId) renderCompare(compareTargetId);
+
+  const btn = document.getElementById('compareTabBtn');
+  if (selectedMemberId) {
+    btn.style.display = '';
+    btn.textContent = '🔄 카드 비교';
+  } else {
+    btn.style.display = 'none';
+    if (currentView === 'compare') switchView('books');
+  }
+}
+
+function renderBookGrid() {
+  if (!allData) return;
+  const { books, members } = allData;
+  const selectedMembers = selectedMemberId ? members.filter(m => m.id === selectedMemberId) : members;
+
+  document.getElementById('bookGrid').innerHTML = books.map(b => {
+    const total = b.total || 9;
+    const memberBars = selectedMembers.map(m => {
+      const prog = b.memberProgress.find(p => p.userId === m.id) || { owned:0, tradeable:0 };
+      const pct = total > 0 ? Math.round(prog.owned/total*100) : 0;
+      const isFull = prog.owned >= total && total > 0;
+      return `<div class="sb-member-row">
+        <span class="sb-member-label">${m.display_name}</span>
+        <div class="sb-mini-bar"><div class="sb-mini-fill ${isFull?'full':''}" style="width:${pct}%"></div></div>
+        <span class="sb-mini-text">${prog.owned}/${total}</span>
+        ${prog.tradeable>0?`<span class="sb-trade-tag">+${prog.tradeable}</span>`:''}
+      </div>`;
+    }).join('');
+
+    const myProg = selectedMemberId ? (b.memberProgress.find(p=>p.userId===selectedMemberId)||{owned:0}) : null;
+    const isFull = myProg && myProg.owned >= total && total > 0;
+
+    return `<div class="sb-tile ${isFull?'sb-full':''}" onclick="openBook(${b.id},'${b.name.replace(/'/g,"\\'")}')">
+      ${b.cover_image_path ? `<img class="sb-cover" src="${b.cover_image_path}">` : `<div class="sb-cover sb-cover-ph">📖</div>`}
+      <div class="sb-name">${b.name}</div>
+      <div class="sb-member-bars">${memberBars}</div>
+    </div>`;
+  }).join('');
+}
+
+async function openBook(bookId, bookName) {
+  currentBookId = bookId;
+  currentView = 'book';
+  document.getElementById('bookDetailName').textContent = bookName;
+  document.getElementById('viewBooks').classList.add('hidden');
+  document.getElementById('viewBook').classList.remove('hidden');
+  document.getElementById('viewCompare').classList.add('hidden');
+  await renderBookDetail(bookId);
+}
+
+let bookViewUserId = null;
+
+async function renderBookDetail(bookId) {
+  const { members } = allData;
+  const displayUser = bookViewUserId || (selectedMemberId) || members[0]?.id;
+
+  // 멤버 탭
+  const tabHtml = members.map(m =>
+    `<button onclick="switchBookUser(${m.id},${bookId})" style="background:${bookViewUserId===m.id||(bookViewUserId===null&&m.id===displayUser)?'#f5c518':'rgba(255,255,255,0.1)'};color:${bookViewUserId===m.id||(bookViewUserId===null&&m.id===displayUser)?'#1a0f07':'#f5deb3'};border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">${m.display_name}</button>`
+  ).join('');
+  document.getElementById('memberBookTabs').innerHTML = tabHtml;
+
+  try {
+    const res = await fetch(`/api/guild/public/member/${displayUser}`);
+    const data = await res.json();
+    const book = data.books.find(b => b.id === bookId);
+    if (!book) { document.getElementById('cardGrid3').innerHTML = '<p style="color:#888;">데이터 없음</p>'; return; }
+
+    const renderStars = r => '★'.repeat(r)+'☆'.repeat(4-r);
+    const slots = Array.from({length:9}, (_,i) => book.cards.find(c=>c.position===i+1)||null);
+
+    document.getElementById('cardGrid3').innerHTML = slots.map(c => {
+      if (!c) return `<div class="card-tile"><div class="card-top empty">☆☆☆☆</div><div class="card-img-wrap"><div class="card-img-ph"><span style="opacity:0.2;font-size:20px;">?</span></div></div><div class="card-name-bottom">-</div></div>`;
+      const qty = c.quantity || 0;
+      const tradeable = Math.max(0, qty-1);
+      const stars = renderStars(c.rarity||1);
+      const imgContent = c.image_path ? `<img src="${c.image_path}" alt="${c.name}">` : `<div class="card-img-ph"><span style="font-size:9px;color:#555;text-align:center;padding:4px;">${renderStars(c.rarity||1)}</span></div>`;
+      return `<div class="card-tile ${c.rarity>=4?'r4':''}">
+        <div class="card-top ${qty===0?'empty':''}">${stars}</div>
+        <div class="card-img-wrap">${imgContent}
+          ${qty===0?'<div class="card-overlay"></div>':''}
+          ${tradeable>0?`<div class="card-badge">+${tradeable}</div>`:''}
+          ${qty>0&&tradeable===0?'<div class="card-owned-dot"></div>':''}
+        </div>
+        <div class="card-name-bottom">${c.name}</div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('cardGrid3').innerHTML = '<p style="color:#888;">로딩 실패</p>';
+  }
+}
+
+async function switchBookUser(userId, bookId) {
+  bookViewUserId = userId;
+  await renderBookDetail(bookId);
+}
+
+function backToBooks() {
+  currentView = 'books';
+  bookViewUserId = null;
+  document.getElementById('viewBooks').classList.remove('hidden');
+  document.getElementById('viewBook').classList.add('hidden');
+  renderBookGrid();
+}
+
+function switchView(v) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', (i===0&&v==='books')||(i===1&&v==='compare')));
+  currentView = v;
+  document.getElementById('viewBooks').classList.toggle('hidden', v !== 'books');
+  document.getElementById('viewCompare').classList.toggle('hidden', v !== 'compare');
+  document.getElementById('viewBook').classList.add('hidden');
+  if (v === 'compare' && selectedMemberId) renderCompare(selectedMemberId);
+}
+
+async function renderCompare(targetId) {
+  compareTargetId = targetId;
+  const panel = document.getElementById('compareContent');
+  panel.innerHTML = '<p style="color:#888;padding:20px 0;">로딩 중...</p>';
+  try {
+    const res = await fetch(`/api/guild/compare/${targetId}`, { credentials: 'include' });
+    if (!res.ok) {
+      // Not logged in — show member detail view instead
+      const targetMember = allData.members.find(m => m.id === targetId);
+      panel.innerHTML = `<div style="background:rgba(201,162,39,0.1);border:1px solid rgba(201,162,39,0.3);border-radius:10px;padding:16px;margin-bottom:16px;font-size:13px;color:#c9a227;">
+        ⚠️ 교환 비교는 로그인 후 이용 가능합니다. <a href="/" class="login-btn" style="font-size:12px;padding:6px 12px;margin-left:8px;">로그인</a>
+      </div>
+      <p style="color:#888;font-size:13px;">현재 <strong style="color:#f5deb3;">${targetMember?.display_name||''}</strong>님의 카드 현황을 보려면 스티커북 탭에서 확인하세요.</p>`;
+      return;
+    }
+    const data = await res.json();
+    const { targetUser, canGive, canReceive } = data;
+    const renderChips = (cards) => {
+      if (!cards.length) return '<span class="empty-msg">없음</span>';
+      const byBook = {};
+      cards.forEach(c => { if(!byBook[c.book_name]) byBook[c.book_name]=[]; byBook[c.book_name].push(c); });
+      return Object.entries(byBook).map(([bk,cs]) =>
+        `<div class="chip-group"><div class="chip-book">${bk}</div><div class="chip-list">${cs.map(c=>`<span class="chip r${c.rarity||1}">${c.name}${c.tradeable_qty>1?` ×${c.tradeable_qty}`:''}</span>`).join('')}</div></div>`
+      ).join('');
+    };
+    panel.innerHTML = `
+      <div class="compare-grid">
+        <div class="compare-panel give">
+          <div class="compare-title give"><span>📤 내가 줄 수 있는 카드</span><span class="compare-count give">${canGive.length}</span></div>
+          <div class="compare-desc">내 여분 + ${targetUser.display_name}님이 없는 것</div>
+          ${renderChips(canGive)}
+        </div>
+        <div class="compare-panel receive">
+          <div class="compare-title receive"><span>📥 내가 받을 수 있는 카드</span><span class="compare-count receive">${canReceive.length}</span></div>
+          <div class="compare-desc">${targetUser.display_name}님 여분 + 내가 없는 것</div>
+          ${renderChips(canReceive)}
+        </div>
+      </div>`;
+  } catch(e) {
+    panel.innerHTML = `<p style="color:#e74c3c;">오류: ${e.message}</p>`;
+  }
+}
+
+// 초기 로드
+loadAll();
+</script>
+</body>
+</html>

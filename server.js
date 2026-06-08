@@ -1982,6 +1982,61 @@ td{padding:8px 10px;border-bottom:1px solid #eee;}
     res.json({ targetUser, canGive, canReceive });
   });
 
+  // ============ 공개 길드 카드 현황 (로그인 불필요) ============
+
+  // 전체 요약: 스티커북별 모든 유저 보유 현황
+  app.get('/api/guild/public/summary', (req, res) => {
+    const books = allSql('SELECT * FROM guild_sticker_books ORDER BY sort_order, id');
+    const members = allSql(`
+      SELECT u.id, u.display_name,
+        (SELECT COUNT(DISTINCT uq.card_id) FROM user_card_quantity uq WHERE uq.user_id=u.id AND uq.quantity>0) as owned_count,
+        (SELECT COALESCE(SUM(CASE WHEN uq.quantity>1 THEN uq.quantity-1 ELSE 0 END),0)
+         FROM user_card_quantity uq WHERE uq.user_id=u.id) as tradeable_count
+      FROM users u ORDER BY u.display_name
+    `);
+    const totalCards = getSql('SELECT COUNT(*) as cnt FROM guild_cards')?.cnt || 0;
+
+    // 스티커북별 각 멤버 보유 수
+    const detail = books.map(b => {
+      const bookCards = getSql('SELECT COUNT(*) as cnt FROM guild_cards WHERE book_id=?', [b.id])?.cnt || 0;
+      const memberProgress = members.map(m => {
+        const owned = getSql(`SELECT COUNT(*) as cnt FROM guild_cards c
+          LEFT JOIN user_card_quantity uq ON uq.card_id=c.id AND uq.user_id=?
+          WHERE c.book_id=? AND COALESCE(uq.quantity,0)>0`, [m.id, b.id])?.cnt || 0;
+        const tradeable = getSql(`SELECT COALESCE(SUM(CASE WHEN uq.quantity>1 THEN uq.quantity-1 ELSE 0 END),0) as t
+          FROM guild_cards c LEFT JOIN user_card_quantity uq ON uq.card_id=c.id AND uq.user_id=?
+          WHERE c.book_id=?`, [m.id, b.id])?.t || 0;
+        return { userId: m.id, owned, tradeable };
+      });
+      return { ...b, total: bookCards, memberProgress };
+    });
+    res.json({ books: detail, members, totalCards, updatedAt: new Date().toISOString() });
+  });
+
+  // 특정 멤버의 전체 카드 현황
+  app.get('/api/guild/public/member/:userId', (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const user = getSql('SELECT id, display_name FROM users WHERE id=?', [userId]);
+    if (!user) return res.status(404).json({ error: '없는 유저입니다' });
+    const books = allSql('SELECT * FROM guild_sticker_books ORDER BY sort_order, id');
+    const result = books.map(b => {
+      const cards = allSql(`
+        SELECT c.id, c.name, c.position, c.rarity, c.image_path,
+          COALESCE(uq.quantity,0) as quantity
+        FROM guild_cards c
+        LEFT JOIN user_card_quantity uq ON uq.card_id=c.id AND uq.user_id=?
+        WHERE c.book_id=? ORDER BY c.position
+      `, [userId, b.id]);
+      return { ...b, cards };
+    });
+    res.json({ user, books: result });
+  });
+
+  // 공개 페이지 서빙
+  app.get('/guild', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'guild.html'));
+  });
+
   app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
   });
