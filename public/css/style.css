@@ -784,14 +784,12 @@ tbody tr:hover { background: #f8f9fa; }
   gap: 16px;
 }
 .sc-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: block;
 }
 
 /* 카드 본체 */
 .sc {
-  flex: 1;
+  width: 100%;
   border-radius: 12px;
   border: 3px solid #8b6340;
   background: #f0e0c0;
@@ -912,27 +910,30 @@ tbody tr:hover { background: #f8f9fa; }
 }
 .sc:hover .sc-edit-btn { opacity: 1; }
 
-/* +/- 버튼 */
+/* +/- 버튼 — 카드 이미지 안 9시/3시 위치 */
 .sc-btn {
-  width: 30px;
-  height: 30px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  border: none;
+  border: 2px solid rgba(255,255,255,0.7);
   cursor: pointer;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
   transition: transform 0.1s, opacity 0.1s;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
   line-height: 1;
   padding: 0;
+  z-index: 10;
 }
-.sc-btn:hover { transform: scale(1.18); }
-.sc-btn:active { transform: scale(0.88); }
-.sc-btn:disabled { opacity: 0.4; transform: none; }
-.sc-btn-minus { background: #e74c3c; color: #fff; }
-.sc-btn-plus { background: #3498db; color: #fff; }
+.sc-btn:hover { transform: translateY(-50%) scale(1.2); }
+.sc-btn:active { transform: translateY(-50%) scale(0.88); }
+.sc-btn:disabled { opacity: 0.4; }
+.sc-btn-minus { left: 4px; background: rgba(231,76,60,0.9); color: #fff; }
+.sc-btn-plus  { right: 4px; background: rgba(52,152,219,0.9); color: #fff; }
 
 /* 비교 화면 */
 .compare-give { border-top: 4px solid #27ae60; }
@@ -963,7 +964,7 @@ tbody tr:hover { background: #f8f9fa; }
   .sb-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .sb-tile { padding: 8px 6px 8px; }
   .sc-grid { gap: 8px; }
-  .sc-btn { width: 24px; height: 24px; font-size: 16px; }
+  .sc-btn { width: 24px; height: 24px; font-size: 15px; }
   .sc-tradeable { font-size: 12px; min-width: 22px; height: 22px; }
   div:has(> .compare-give) { grid-template-columns: 1fr !important; }
   .compare-give, .compare-receive { grid-column: 1 / -1; }

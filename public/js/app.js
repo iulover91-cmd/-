@@ -2552,18 +2552,18 @@ async function renderGuildBook(container, bookId, bookName) {
 
     return `
       <div class="sc-wrap">
-        <button class="sc-btn sc-btn-minus" onclick="guildAdjustQty(${c.id}, -1, this)" title="−1">−</button>
         <div class="sc rarity-${c.rarity||1}" data-qty="${qty}" data-id="${c.id}">
           <div class="sc-stars">${stars}</div>
           <div class="sc-inner">${imgHtml}
             ${qty === 0 ? '<div class="sc-gray-overlay"></div>' : ''}
             ${tradeable > 0 ? `<div class="sc-tradeable">+${tradeable}</div>` : ''}
             ${qty > 0 && tradeable === 0 ? '<div class="sc-owned-dot"></div>' : ''}
+            <button class="sc-btn sc-btn-minus" onclick="guildAdjustQty(${c.id}, -1, this)" title="−1">−</button>
+            <button class="sc-btn sc-btn-plus" onclick="guildAdjustQty(${c.id}, 1, this)" title="+1">+</button>
           </div>
           <div class="sc-name">${c.name}</div>
           ${currentUser.role==='admin' ? `<button class="sc-edit-btn" onclick="guildEditCard(${c.id},'${c.name.replace(/'/g,"\\'")}',${c.rarity||1},'${(c.image_path||'').replace(/'/g,"\\'")}',${bookId})" title="편집">✏️</button>` : ''}
         </div>
-        <button class="sc-btn sc-btn-plus" onclick="guildAdjustQty(${c.id}, 1, this)" title="+1">+</button>
       </div>`;
   }).join('');
 
