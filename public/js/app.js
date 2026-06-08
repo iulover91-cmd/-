@@ -125,6 +125,8 @@ function buildSidebar() {
       { id: 'files', icon: '📁', label: '작업 파일 현황' },
       { id: 'calendar', icon: '📅', label: '캘린더' },
       { divider: true },
+      { id: 'guild-cards', icon: '🃏', label: '길드 카드 거래' },
+      { divider: true },
       { id: 'messages', icon: '💬', label: '메시지' },
       { id: 'logs', icon: '📋', label: '활동 로그' },
       { id: 'drive-settings', icon: '⚙️', label: '설정' },
@@ -134,6 +136,8 @@ function buildSidebar() {
     items = [
       { id: 'my-status', icon: '📊', label: '내 현황' },
       { id: 'calendar', icon: '📅', label: '캘린더' },
+      { divider: true },
+      { id: 'guild-cards', icon: '🃏', label: '길드 카드 거래' },
       { divider: true },
       { id: 'messages', icon: '💬', label: '메시지' },
       { id: 'change-pw', icon: '🔑', label: '비밀번호 변경' },
@@ -176,6 +180,7 @@ function navigateTo(page) {
     case 'calendar': renderCalendar(main); break;
     case 'drive-settings': renderDriveSettings(main); break;
     case 'change-pw': renderChangePassword(main); break;
+    case 'guild-cards': renderGuildCards(main); break;
     default: main.innerHTML = '<p>페이지를 찾을 수 없습니다</p>';
   }
 }
@@ -2418,6 +2423,311 @@ async function checkNotifications() {
       badge.style.display = data.count > 0 ? 'inline-flex' : 'none';
     }
   } catch {}
+}
+
+// ============ 길드 카드 거래 ============
+let guildAllCards = [];
+let guildMyOwned = new Set();
+let guildMyNeeded = new Set();
+let guildActiveTab = 'my-cards';
+
+async function renderGuildCards(container) {
+  container.innerHTML = '<p style="padding:32px;">로딩 중...</p>';
+  try {
+    const [cards, myInv] = await Promise.all([
+      api('/api/guild/cards'),
+      api('/api/guild/my-cards')
+    ]);
+    guildAllCards = cards;
+    guildMyOwned = new Set(myInv.filter(i => i.status === 'owned').map(i => i.card_id));
+    guildMyNeeded = new Set(myInv.filter(i => i.status === 'needed').map(i => i.card_id));
+
+    container.innerHTML = `
+      <div class="page-header">
+        <h1>🃏 길드 카드 거래</h1>
+        ${currentUser.role === 'admin' ? `<div class="actions"><button class="btn btn-primary btn-sm" onclick="openGuildCardAddModal()">+ 카드 추가</button></div>` : ''}
+      </div>
+
+      <div style="display:flex;gap:0;border-bottom:2px solid #e0e0e0;margin-bottom:20px;">
+        <button class="guild-tab ${guildActiveTab==='my-cards'?'active':''}" onclick="switchGuildTab('my-cards')">📋 내 카드 관리</button>
+        <button class="guild-tab ${guildActiveTab==='members'?'active':''}" onclick="switchGuildTab('members')">👥 길드원 현황</button>
+        <button class="guild-tab ${guildActiveTab==='compare'?'active':''}" onclick="switchGuildTab('compare')">🔄 카드 비교</button>
+      </div>
+
+      <div id="guildTabContent"></div>
+    `;
+
+    switchGuildTab(guildActiveTab);
+  } catch(e) {
+    container.innerHTML = `<p class="error-msg" style="padding:32px;">${e.message}</p>`;
+  }
+}
+
+function switchGuildTab(tab) {
+  guildActiveTab = tab;
+  document.querySelectorAll('.guild-tab').forEach(el => {
+    el.classList.toggle('active', el.textContent.includes(tab === 'my-cards' ? '내 카드' : tab === 'members' ? '길드원' : '비교'));
+  });
+  const content = document.getElementById('guildTabContent');
+  if (!content) return;
+  if (tab === 'my-cards') renderGuildMyCards(content);
+  else if (tab === 'members') renderGuildMembers(content);
+  else if (tab === 'compare') renderGuildCompare(content);
+}
+
+function groupCardsByCategory(cards) {
+  const groups = {};
+  for (const c of cards) {
+    const cat = c.category || '기타';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(c);
+  }
+  return groups;
+}
+
+function renderGuildMyCards(container) {
+  if (guildAllCards.length === 0) {
+    container.innerHTML = `<div class="card"><p style="color:#888;text-align:center;padding:32px;">등록된 카드가 없습니다.<br>${currentUser.role==='admin'?'상단 "+ 카드 추가" 버튼으로 카드를 추가하세요.':''}</p></div>`;
+    return;
+  }
+
+  const groups = groupCardsByCategory(guildAllCards);
+  const ownedCount = guildMyOwned.size;
+  const neededCount = guildMyNeeded.size;
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;padding:16px 24px;">
+      <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:14px;color:#555;">내 보유: <strong style="color:#27ae60;">${ownedCount}장</strong></span>
+        <span style="font-size:14px;color:#555;">필요 카드: <strong style="color:#e74c3c;">${neededCount}장</strong></span>
+        <span style="font-size:14px;color:#555;">전체: <strong>${guildAllCards.length}장</strong></span>
+        <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="saveMyGuildCards()">💾 저장</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:13px;color:#888;">체크하여 보유/필요 카드를 설정하세요</span>
+        <span class="guild-legend owned">✓ 보유</span>
+        <span class="guild-legend needed">✓ 필요</span>
+      </div>
+  `;
+
+  for (const [cat, cards] of Object.entries(groups)) {
+    html += `<div style="margin-bottom:20px;"><h4 style="font-size:14px;color:#555;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f0f0f0;">${cat}</h4>`;
+    html += `<div class="guild-card-grid">`;
+    for (const card of cards) {
+      const isOwned = guildMyOwned.has(card.id);
+      const isNeeded = guildMyNeeded.has(card.id);
+      html += `
+        <div class="guild-card-item" id="gci-${card.id}">
+          <div class="guild-card-name">${card.name}</div>
+          <div class="guild-card-checks">
+            <label class="guild-check-label owned" onclick="event.stopPropagation()">
+              <input type="checkbox" ${isOwned?'checked':''} onchange="toggleGuildCard(${card.id},'owned',this.checked)">
+              보유
+            </label>
+            <label class="guild-check-label needed" onclick="event.stopPropagation()">
+              <input type="checkbox" ${isNeeded?'checked':''} onchange="toggleGuildCard(${card.id},'needed',this.checked)">
+              필요
+            </label>
+          </div>
+          ${currentUser.role==='admin' ? `<button class="guild-card-del" onclick="deleteGuildCard(${card.id},'${card.name.replace(/'/g,"\\'")}')">×</button>` : ''}
+        </div>
+      `;
+    }
+    html += `</div></div>`;
+  }
+  html += `
+      <div style="text-align:right;margin-top:16px;">
+        <button class="btn btn-primary btn-sm" onclick="saveMyGuildCards()">💾 저장</button>
+      </div>
+    </div>
+  `;
+  container.innerHTML = html;
+}
+
+function toggleGuildCard(cardId, status, checked) {
+  if (status === 'owned') {
+    if (checked) guildMyOwned.add(cardId); else guildMyOwned.delete(cardId);
+  } else {
+    if (checked) guildMyNeeded.add(cardId); else guildMyNeeded.delete(cardId);
+  }
+}
+
+async function saveMyGuildCards() {
+  try {
+    await api('/api/guild/my-cards', {
+      method: 'PUT',
+      body: { owned: [...guildMyOwned], needed: [...guildMyNeeded] }
+    });
+    showToast('카드 정보가 저장되었습니다', 'success');
+  } catch(e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function renderGuildMembers(container) {
+  container.innerHTML = '<p style="color:#888;">로딩 중...</p>';
+  try {
+    const members = await api('/api/guild/members');
+    if (members.length === 0) {
+      container.innerHTML = '<div class="card"><p style="color:#888;text-align:center;padding:32px;">다른 길드원이 없습니다.</p></div>';
+      return;
+    }
+
+    let html = `<div class="card"><div class="table-container"><table>
+      <thead><tr><th>닉네임</th><th>보유 카드</th><th>필요 카드</th><th>비교</th></tr></thead>
+      <tbody>`;
+    for (const m of members) {
+      html += `<tr>
+        <td><strong>${m.display_name}</strong></td>
+        <td><span style="color:#27ae60;font-weight:700;">${m.owned_count}장</span></td>
+        <td><span style="color:#e74c3c;font-weight:700;">${m.needed_count}장</span></td>
+        <td><button class="btn btn-primary btn-sm" onclick="guildCompareWith(${m.id},'${m.display_name.replace(/'/g,"\\'")}')">🔄 비교하기</button></td>
+      </tr>`;
+    }
+    html += `</tbody></table></div></div>`;
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = `<p class="error-msg">${e.message}</p>`;
+  }
+}
+
+async function renderGuildCompare(container, targetUserId, targetUserName) {
+  if (!targetUserId) {
+    // 멤버 선택 UI
+    try {
+      const members = await api('/api/guild/members');
+      if (members.length === 0) {
+        container.innerHTML = '<div class="card"><p style="color:#888;text-align:center;padding:32px;">비교할 길드원이 없습니다.</p></div>';
+        return;
+      }
+      let html = `<div class="card">
+        <h3 style="margin-bottom:16px;">비교할 길드원을 선택하세요</h3>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">`;
+      for (const m of members) {
+        html += `<button class="btn btn-secondary" onclick="guildCompareWith(${m.id},'${m.display_name.replace(/'/g,"\\'")}')">
+          ${m.display_name}
+          <span style="font-size:11px;opacity:0.8;margin-left:4px;">보유${m.owned_count} / 필요${m.needed_count}</span>
+        </button>`;
+      }
+      html += `</div></div>`;
+      container.innerHTML = html;
+    } catch(e) {
+      container.innerHTML = `<p class="error-msg">${e.message}</p>`;
+    }
+    return;
+  }
+
+  container.innerHTML = '<p style="color:#888;">비교 중...</p>';
+  try {
+    const result = await api(`/api/guild/compare/${targetUserId}`);
+    const { canGive, canReceive } = result;
+
+    const renderCardList = (cards) => {
+      if (cards.length === 0) return '<p style="color:#aaa;font-size:14px;padding:12px 0;">해당 카드가 없습니다</p>';
+      const groups = groupCardsByCategory(cards);
+      let html = '';
+      for (const [cat, cs] of Object.entries(groups)) {
+        html += `<div style="margin-bottom:12px;"><span style="font-size:12px;color:#888;font-weight:600;">${cat}</span><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">`;
+        for (const c of cs) {
+          html += `<span class="guild-card-chip">${c.name}</span>`;
+        }
+        html += `</div></div>`;
+      }
+      return html;
+    };
+
+    container.innerHTML = `
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">
+        <button class="btn btn-secondary btn-sm" onclick="renderGuildCompare(document.getElementById('guildTabContent'))">← 목록으로</button>
+        <h3 style="font-size:16px;"><strong>${targetUserName}</strong>님과의 카드 비교</h3>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card" style="border-top:4px solid #27ae60;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+            <span style="font-size:20px;">📤</span>
+            <h3 style="color:#27ae60;">내가 줄 수 있는 카드</h3>
+            <span style="margin-left:auto;background:#e8f8f0;color:#27ae60;padding:4px 12px;border-radius:12px;font-weight:700;font-size:14px;">${canGive.length}장</span>
+          </div>
+          <p style="font-size:13px;color:#888;margin-bottom:12px;">내가 보유 & ${targetUserName}님이 필요</p>
+          ${renderCardList(canGive)}
+        </div>
+
+        <div class="card" style="border-top:4px solid #3498db;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+            <span style="font-size:20px;">📥</span>
+            <h3 style="color:#3498db;">내가 받을 수 있는 카드</h3>
+            <span style="margin-left:auto;background:#e8f4fd;color:#3498db;padding:4px 12px;border-radius:12px;font-weight:700;font-size:14px;">${canReceive.length}장</span>
+          </div>
+          <p style="font-size:13px;color:#888;margin-bottom:12px;">${targetUserName}님이 보유 & 내가 필요</p>
+          ${renderCardList(canReceive)}
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    container.innerHTML = `<p class="error-msg">${e.message}</p>`;
+  }
+}
+
+async function guildCompareWith(userId, userName) {
+  guildActiveTab = 'compare';
+  document.querySelectorAll('.guild-tab').forEach(el => {
+    el.classList.toggle('active', el.textContent.includes('비교'));
+  });
+  const content = document.getElementById('guildTabContent');
+  if (content) renderGuildCompare(content, userId, userName);
+}
+
+function openGuildCardAddModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay show';
+  overlay.id = 'guildCardModal';
+  overlay.innerHTML = `<div class="modal" style="max-width:420px;">
+    <h2 style="margin-bottom:20px;">🃏 카드 추가</h2>
+    <div class="form-group">
+      <label>카드 이름 *</label>
+      <input type="text" id="gcName" placeholder="카드 이름 입력">
+    </div>
+    <div class="form-group">
+      <label>카테고리</label>
+      <input type="text" id="gcCategory" placeholder="예: 공격, 방어, 마법 등" value="기타">
+    </div>
+    <div class="form-group">
+      <label>설명 (선택)</label>
+      <input type="text" id="gcDesc" placeholder="카드 설명">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="document.getElementById('guildCardModal').remove()">취소</button>
+      <button class="btn btn-primary" onclick="addGuildCard()">추가</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('gcName').focus();
+}
+
+async function addGuildCard() {
+  const name = document.getElementById('gcName').value.trim();
+  const category = document.getElementById('gcCategory').value.trim() || '기타';
+  const description = document.getElementById('gcDesc').value.trim();
+  if (!name) { showToast('카드 이름을 입력하세요', 'error'); return; }
+  try {
+    await api('/api/guild/cards', { method: 'POST', body: { name, category, description } });
+    document.getElementById('guildCardModal')?.remove();
+    showToast(`"${name}" 카드가 추가되었습니다`, 'success');
+    renderGuildCards(document.getElementById('mainContent'));
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function deleteGuildCard(id, name) {
+  if (!confirm(`"${name}" 카드를 삭제하시겠습니까?\n모든 길드원의 해당 카드 데이터도 삭제됩니다.`)) return;
+  try {
+    await api(`/api/guild/cards/${id}`, { method: 'DELETE' });
+    showToast(`"${name}" 카드가 삭제되었습니다`, 'success');
+    renderGuildCards(document.getElementById('mainContent'));
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
 // ============ 초기화 ============

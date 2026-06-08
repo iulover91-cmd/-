@@ -689,3 +689,109 @@ tbody tr:hover { background: #f8f9fa; }
   color: #3498db;
   white-space: nowrap;
 }
+
+/* ============ 길드 카드 거래 ============ */
+.guild-tab {
+  padding: 12px 20px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: #888;
+  font-weight: 600;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+}
+.guild-tab.active {
+  color: #302b63;
+  border-bottom-color: #302b63;
+}
+.guild-tab:hover { color: #302b63; }
+
+.guild-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+.guild-card-item {
+  background: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  padding: 12px;
+  position: relative;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.guild-card-item:hover { border-color: #302b63; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.guild-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a2e;
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+.guild-card-checks {
+  display: flex;
+  gap: 8px;
+}
+.guild-check-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.guild-check-label.owned { color: #27ae60; }
+.guild-check-label.owned:has(input:checked) { background: #e8f8f0; }
+.guild-check-label.needed { color: #e74c3c; }
+.guild-check-label.needed:has(input:checked) { background: #fde8e8; }
+.guild-check-label input { cursor: pointer; accent-color: currentColor; }
+
+.guild-card-del {
+  position: absolute;
+  top: 6px; right: 6px;
+  background: #fde8e8;
+  color: #e74c3c;
+  border: none;
+  border-radius: 50%;
+  width: 20px; height: 20px;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  line-height: 1;
+}
+.guild-card-item:hover .guild-card-del { opacity: 1; }
+
+.guild-card-chip {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f0f0f0;
+  color: #333;
+}
+
+.guild-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 6px;
+}
+.guild-legend.owned { background: #e8f8f0; color: #27ae60; }
+.guild-legend.needed { background: #fde8e8; color: #e74c3c; }
+
+@media (max-width: 768px) {
+  .guild-card-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  #guildTabContent > div[style*="grid-template-columns:1fr 1fr"] {
+    grid-template-columns: 1fr;
+  }
+}

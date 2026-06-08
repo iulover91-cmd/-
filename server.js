@@ -259,6 +259,27 @@ async function main() {
     );
   `);
 
+  // 길드 카드 테이블
+  execSql(`
+    CREATE TABLE IF NOT EXISTS guild_cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      category TEXT DEFAULT '기타',
+      description TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS user_card_inventory (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      card_id INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('owned','needed')),
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, card_id, status),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (card_id) REFERENCES guild_cards(id)
+    );
+  `);
+
   // 활동 로그 헬퍼
   function addLog(userId, userName, action, detail, targetType, targetId) {
     try {
@@ -1651,6 +1672,111 @@ td{padding:8px 10px;border-bottom:1px solid #eee;}
   app.delete('/api/contract-documents/:id', requireAdmin, (req, res) => {
     runSql('DELETE FROM contract_documents WHERE id = ?', [parseInt(req.params.id)]);
     res.json({ success: true });
+  });
+
+  // ============ 길드 카드 거래 API ============
+
+  function requireLogin(req, res, next) {
+    if (!req.session.userId) return res.status(401).json({ error: '로그인이 필요합니다' });
+    next();
+  }
+
+  // 카드 목록 조회
+  app.get('/api/guild/cards', requireLogin, (req, res) => {
+    const cards = allSql('SELECT * FROM guild_cards ORDER BY category, name');
+    res.json(cards);
+  });
+
+  // 카드 추가 (관리자만)
+  app.post('/api/guild/cards', requireAdmin, (req, res) => {
+    const { name, category, description } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: '카드 이름을 입력하세요' });
+    const result = runSql(
+      'INSERT INTO guild_cards (name, category, description) VALUES (?,?,?)',
+      [name.trim(), (category || '기타').trim(), (description || '').trim()]
+    );
+    res.json({ success: true, id: result.lastInsertRowid });
+  });
+
+  // 카드 삭제 (관리자만)
+  app.delete('/api/guild/cards/:id', requireAdmin, (req, res) => {
+    const id = parseInt(req.params.id);
+    runSql('DELETE FROM user_card_inventory WHERE card_id = ?', [id]);
+    runSql('DELETE FROM guild_cards WHERE id = ?', [id]);
+    res.json({ success: true });
+  });
+
+  // 내 카드 인벤토리 조회
+  app.get('/api/guild/my-cards', requireLogin, (req, res) => {
+    const userId = req.session.userId;
+    const inventory = allSql(
+      'SELECT card_id, status FROM user_card_inventory WHERE user_id = ?',
+      [userId]
+    );
+    res.json(inventory);
+  });
+
+  // 내 카드 인벤토리 업데이트
+  app.put('/api/guild/my-cards', requireLogin, (req, res) => {
+    const userId = req.session.userId;
+    const { owned = [], needed = [] } = req.body;
+
+    // 기존 데이터 삭제 후 새로 삽입
+    runSql('DELETE FROM user_card_inventory WHERE user_id = ?', [userId]);
+    for (const cardId of owned) {
+      try {
+        runSql('INSERT INTO user_card_inventory (user_id, card_id, status) VALUES (?,?,?)', [userId, cardId, 'owned']);
+      } catch(e) {}
+    }
+    for (const cardId of needed) {
+      try {
+        runSql('INSERT INTO user_card_inventory (user_id, card_id, status) VALUES (?,?,?)', [userId, cardId, 'needed']);
+      } catch(e) {}
+    }
+    res.json({ success: true });
+  });
+
+  // 길드 멤버 목록 (카드 통계 포함)
+  app.get('/api/guild/members', requireLogin, (req, res) => {
+    const myUserId = req.session.userId;
+    const members = allSql(`
+      SELECT u.id, u.display_name,
+        (SELECT COUNT(*) FROM user_card_inventory WHERE user_id = u.id AND status = 'owned') as owned_count,
+        (SELECT COUNT(*) FROM user_card_inventory WHERE user_id = u.id AND status = 'needed') as needed_count
+      FROM users u
+      WHERE u.id != ?
+      ORDER BY u.display_name
+    `, [myUserId]);
+    res.json(members);
+  });
+
+  // 특정 멤버와 카드 비교
+  app.get('/api/guild/compare/:userId', requireLogin, (req, res) => {
+    const myUserId = req.session.userId;
+    const targetUserId = parseInt(req.params.userId);
+
+    const targetUser = getSql('SELECT id, display_name FROM users WHERE id = ?', [targetUserId]);
+    if (!targetUser) return res.status(404).json({ error: '사용자를 찾을 수 없습니다' });
+
+    // 내가 줄 수 있는 카드: 내가 owned + 상대방이 needed
+    const canGive = allSql(`
+      SELECT gc.id, gc.name, gc.category
+      FROM guild_cards gc
+      JOIN user_card_inventory my_inv ON gc.id = my_inv.card_id AND my_inv.user_id = ? AND my_inv.status = 'owned'
+      JOIN user_card_inventory their_inv ON gc.id = their_inv.card_id AND their_inv.user_id = ? AND their_inv.status = 'needed'
+      ORDER BY gc.category, gc.name
+    `, [myUserId, targetUserId]);
+
+    // 내가 받을 수 있는 카드: 상대방이 owned + 내가 needed
+    const canReceive = allSql(`
+      SELECT gc.id, gc.name, gc.category
+      FROM guild_cards gc
+      JOIN user_card_inventory their_inv ON gc.id = their_inv.card_id AND their_inv.user_id = ? AND their_inv.status = 'owned'
+      JOIN user_card_inventory my_inv ON gc.id = my_inv.card_id AND my_inv.user_id = ? AND my_inv.status = 'needed'
+      ORDER BY gc.category, gc.name
+    `, [targetUserId, myUserId]);
+
+    res.json({ targetUser, canGive, canReceive });
   });
 
   app.get('/', (req, res) => {
